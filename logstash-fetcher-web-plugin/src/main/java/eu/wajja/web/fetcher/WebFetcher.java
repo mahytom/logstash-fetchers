@@ -69,7 +69,7 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<List<Object>> CONFIG_URLS = PluginConfigSpec.arraySetting("urls");
 	public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE = PluginConfigSpec.arraySetting("exclude", Arrays.asList(".css", ".png"), false, false);
 	public static final PluginConfigSpec<String> CONFIG_DATA_FOLDER = PluginConfigSpec.stringSetting("dataFolder");
-	public static final PluginConfigSpec<Long> CONFIG_THRAD_POOL_SIZE = PluginConfigSpec.numSetting("threads", 10);
+	public static final PluginConfigSpec<Long> CONFIG_THREAD_POOL_SIZE = PluginConfigSpec.numSetting("threads", 10);
 	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting("refreshInterval", 86400l);
 
 	private ThreadPoolExecutor executorService = null;
@@ -100,7 +100,7 @@ public class WebFetcher implements Input {
 		this.excludedUrls = config.get(CONFIG_EXCLUDE).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.refreshSeconds = config.get(CONFIG_REFRESH_INTERVAL);
 
-		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(config.get(CONFIG_THRAD_POOL_SIZE).intValue());
+		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(config.get(CONFIG_THREAD_POOL_SIZE).intValue());
 	}
 
 	@Override
@@ -410,7 +410,7 @@ public class WebFetcher implements Input {
 	 */
 	@Override
 	public Collection<PluginConfigSpec<?>> configSchema() {
-		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_EXCLUDE, CONFIG_THRAD_POOL_SIZE, CONFIG_THRAD_POOL_SIZE);
+		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_EXCLUDE, CONFIG_THREAD_POOL_SIZE, CONFIG_REFRESH_INTERVAL);
 	}
 
 	@Override
