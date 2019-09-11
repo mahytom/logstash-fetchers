@@ -70,7 +70,7 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE = PluginConfigSpec.arraySetting("exclude", Arrays.asList(".css", ".png"), false, false);
 	public static final PluginConfigSpec<String> CONFIG_DATA_FOLDER = PluginConfigSpec.stringSetting("dataFolder");
 	public static final PluginConfigSpec<Long> CONFIG_THRAD_POOL_SIZE = PluginConfigSpec.numSetting("threads", 10);
-	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting("refreshInterval", 30000000l);
+	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting("refreshInterval", 86400l);
 
 	private ThreadPoolExecutor executorService = null;
 	private StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
