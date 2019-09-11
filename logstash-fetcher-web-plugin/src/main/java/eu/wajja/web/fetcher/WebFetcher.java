@@ -368,8 +368,18 @@ public class WebFetcher implements Input {
 			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
 
 			Elements elements = document.getElementsByAttribute("href");
-			List<String> childPages = elements.stream().map(e -> e.attr("href")).filter(href -> href.startsWith("/") || href.startsWith(urlString)).filter(href -> excludedUrls.stream().noneMatch(ex -> href.endsWith(ex))).collect(Collectors.toList());
-			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> href.startsWith("http") && !href.startsWith(urlString)).filter(href -> excludedUrls.stream().noneMatch(ex -> href.endsWith(ex))).collect(Collectors.toList());
+			
+			List<String> childPages = elements.stream().map(e -> e.attr("href"))
+					.filter(href -> href.startsWith("/") || href.startsWith(urlString))
+					.filter(href -> excludedUrls.stream()
+							.noneMatch(ex -> href.contains(ex)))
+					.collect(Collectors.toList());
+			
+			List<String> externalPages = elements.stream().map(e -> e.attr("href"))
+					.filter(href -> href.startsWith("http") && !href.startsWith(urlString))
+					.filter(href -> excludedUrls.stream()
+							.noneMatch(ex -> href.contains(ex)))
+					.collect(Collectors.toList());
 
 			metadata.put("childPages", cleanUpList(childPages));
 			metadata.put("externalPages", cleanUpList(externalPages));
