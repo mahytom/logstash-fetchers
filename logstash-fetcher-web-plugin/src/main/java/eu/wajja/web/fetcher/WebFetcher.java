@@ -112,7 +112,7 @@ public class WebFetcher implements Input {
 
 			while (!stopped) {
 
-				urls.stream().forEach(url -> {
+				urls.parallelStream().forEach(url -> {
 
 					String id = Base64.getEncoder().encodeToString(url.getBytes());
 					Path indexPath = Paths.get(dataFolder + "/" + id + "_index");
