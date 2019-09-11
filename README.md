@@ -32,7 +32,24 @@ Work in progress
 
 ## Filesystem Plugin
 
-Work in progress
+This plugin will crawl a local drive and download all information ready to be indexed.
+
+The data is sent as a byte[] and all headers are added to the hashmap send to elastic.
+
+No permissions are being extracted. This will be added at a later date.
+
+### Configuration
+
+```
+input {
+  filesystemfetcher {
+	paths => ["/my/data/directory"]
+	exclude => ["docx","pdf"]
+	dataFolder => "/mypath/tofolder/"
+	threads => 10
+  }
+}
+```
 
 ## Confluence Plugin
 
