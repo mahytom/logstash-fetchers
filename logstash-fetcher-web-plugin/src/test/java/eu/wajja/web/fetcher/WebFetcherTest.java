@@ -28,6 +28,11 @@ public class WebFetcherTest {
 		configValues.put(WebFetcher.CONFIG_THREAD_POOL_SIZE.name(), 1l);
 		configValues.put(WebFetcher.CONFIG_REFRESH_INTERVAL.name(), 1l);
 
+		configValues.put(WebFetcher.PROXY_HOST.name(), "HOST");
+		configValues.put(WebFetcher.PROXY_PASS.name(), "PASS");
+		configValues.put(WebFetcher.PROXY_PORT.name(), 55l);
+		configValues.put(WebFetcher.PROXY_USER.name(), "USER");
+
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);
 
@@ -36,7 +41,7 @@ public class WebFetcherTest {
 
 		List<Map<String, Object>> events = testConsumer.getEvents();
 
-		Assert.assertEquals(1, events.size());
+		Assert.assertEquals(0, events.size());
 
 	}
 

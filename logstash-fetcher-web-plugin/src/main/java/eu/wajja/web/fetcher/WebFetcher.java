@@ -2,7 +2,11 @@ package eu.wajja.web.fetcher;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.Authenticator;
 import java.net.HttpURLConnection;
+import java.net.InetSocketAddress;
+import java.net.PasswordAuthentication;
+import java.net.Proxy;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -72,6 +76,11 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<Long> CONFIG_THREAD_POOL_SIZE = PluginConfigSpec.numSetting("threads", 10);
 	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting("refreshInterval", 86400l);
 
+	public static final PluginConfigSpec<String> PROXY_HOST = PluginConfigSpec.stringSetting("proxyHost");
+	public static final PluginConfigSpec<Long> PROXY_PORT = PluginConfigSpec.numSetting("proxyPort", 80);
+	public static final PluginConfigSpec<String> PROXY_USER = PluginConfigSpec.stringSetting("proxyUser");
+	public static final PluginConfigSpec<String> PROXY_PASS = PluginConfigSpec.stringSetting("proxyPass");
+
 	private ThreadPoolExecutor executorService = null;
 	private StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
 	private final CountDownLatch done = new CountDownLatch(1);
@@ -83,6 +92,8 @@ public class WebFetcher implements Input {
 	private Long refreshSeconds;
 	private List<String> urls;
 	private List<String> excludedUrls;
+
+	private Proxy proxy = null;
 
 	/**
 	 * Mandatory constructor
@@ -99,6 +110,32 @@ public class WebFetcher implements Input {
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.excludedUrls = config.get(CONFIG_EXCLUDE).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.refreshSeconds = config.get(CONFIG_REFRESH_INTERVAL);
+
+		String proxyHost = config.get(PROXY_HOST);
+		Long proxyPort = config.get(PROXY_PORT);
+		String proxyUser = config.get(PROXY_USER);
+		String proxyPass = config.get(PROXY_PASS);
+
+		if (proxyUser != null && proxyPass != null) {
+
+			LOGGER.info("Initializing Proxy Security {}:{}", proxyHost, proxyPort);
+			Authenticator authenticator = new Authenticator() {
+
+				@Override
+				public PasswordAuthentication getPasswordAuthentication() {
+
+					return new PasswordAuthentication(proxyUser, proxyPass.toCharArray());
+				}
+			};
+
+			Authenticator.setDefault(authenticator);
+		}
+
+		if (proxyHost != null && proxyPort != null) {
+
+			LOGGER.info("Initializing Proxy {}:{}", proxyHost, proxyPort);
+			proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort.intValue()));
+		}
 
 		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(config.get(CONFIG_THREAD_POOL_SIZE).intValue());
 	}
@@ -120,7 +157,7 @@ public class WebFetcher implements Input {
 					try {
 
 						Directory directory = FSDirectory.open(indexPath);
-						HttpURLConnection urlConnection = (HttpURLConnection) new URL(url + "/robot.txt").openConnection();
+						HttpURLConnection urlConnection = getHttpConnection(new URL(url + "/robot.txt"));
 
 						int code = urlConnection.getResponseCode();
 						String message = urlConnection.getResponseMessage();
@@ -130,7 +167,7 @@ public class WebFetcher implements Input {
 
 						} else {
 
-							LOGGER.error("Failed to read robot.txt url, status {}, {}, {}", code, url.toString(), message);
+							LOGGER.error("Failed to read robot.txt url, status {}, {}, {}", code, url, message);
 
 							Map<String, Object> metadata = new HashMap<>();
 							metadata.put("reference", "robot.txt");
@@ -155,18 +192,26 @@ public class WebFetcher implements Input {
 				});
 
 				LOGGER.info("finished processing all urls");
-				stopped = true;
+				Thread.sleep(30000);
 			}
 
 		} catch (Exception e) {
 			LOGGER.error("Failed", e);
-		} finally {
-			stopped = true;
-			done.countDown();
 		}
 	}
 
+	private HttpURLConnection getHttpConnection(URL url) throws IOException {
+
+		if (proxy == null) {
+			return (HttpURLConnection) url.openConnection();
+		} else {
+			return (HttpURLConnection) url.openConnection(proxy);
+		}
+
+	}
+
 	private void extractRobot(String url, Directory directory, HttpURLConnection urlConnection, int code, String message) {
+
 		try (InputStream inputStream = urlConnection.getInputStream()) {
 
 			LOGGER.info("Read url, status {}, {}, {}", code, url, message);
@@ -214,7 +259,7 @@ public class WebFetcher implements Input {
 			Map<String, Object> metadata = new HashMap<>();
 
 			URL url = new URL(urlString);
-			HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+			HttpURLConnection urlConnection = getHttpConnection(url);
 			urlConnection.connect();
 
 			int code = urlConnection.getResponseCode();
@@ -237,19 +282,19 @@ public class WebFetcher implements Input {
 
 					List<String> childPages = (List<String>) metadata.get("childPages");
 
-					Optional.ofNullable(childPages).orElse(new ArrayList<>()).parallelStream().forEach(childUrl -> {
+					Optional.ofNullable(childPages).orElse(new ArrayList<>()).parallelStream().filter(href -> excludedUrls.stream().noneMatch(ex -> href.contains(ex))).forEach(childUrl ->
 
-						executorService.submit(() -> {
+					executorService.submit(() -> {
 
-							if (!childUrl.startsWith(urlString)) {
-								extractUrl(directory, consumer, rootUrl + childUrl, rootUrl, refreshDateTime);
-							} else {
-								extractUrl(directory, consumer, childUrl, rootUrl, refreshDateTime);
-							}
+						if (!childUrl.startsWith(urlString)) {
+							extractUrl(directory, consumer, rootUrl + childUrl, rootUrl, refreshDateTime);
+						} else {
+							extractUrl(directory, consumer, childUrl, rootUrl, refreshDateTime);
+						}
 
-						});
+					})
 
-					});
+					);
 
 				} catch (Exception e1) {
 
@@ -368,18 +413,9 @@ public class WebFetcher implements Input {
 			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
 
 			Elements elements = document.getElementsByAttribute("href");
-			
-			List<String> childPages = elements.stream().map(e -> e.attr("href"))
-					.filter(href -> href.startsWith("/") || href.startsWith(urlString))
-					.filter(href -> excludedUrls.stream()
-							.noneMatch(ex -> href.contains(ex)))
-					.collect(Collectors.toList());
-			
-			List<String> externalPages = elements.stream().map(e -> e.attr("href"))
-					.filter(href -> href.startsWith("http") && !href.startsWith(urlString))
-					.filter(href -> excludedUrls.stream()
-							.noneMatch(ex -> href.contains(ex)))
-					.collect(Collectors.toList());
+
+			List<String> childPages = elements.stream().map(e -> e.attr("href")).filter(href -> href.startsWith("/") || href.startsWith(urlString)).collect(Collectors.toList());
+			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> href.startsWith("http") && !href.startsWith(urlString)).collect(Collectors.toList());
 
 			metadata.put("childPages", cleanUpList(childPages));
 			metadata.put("externalPages", cleanUpList(externalPages));
@@ -410,7 +446,7 @@ public class WebFetcher implements Input {
 	 */
 	@Override
 	public Collection<PluginConfigSpec<?>> configSchema() {
-		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_EXCLUDE, CONFIG_THREAD_POOL_SIZE, CONFIG_REFRESH_INTERVAL);
+		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_EXCLUDE, CONFIG_THREAD_POOL_SIZE, CONFIG_REFRESH_INTERVAL, PROXY_HOST, PROXY_PASS, PROXY_PORT, PROXY_USER);
 	}
 
 	@Override

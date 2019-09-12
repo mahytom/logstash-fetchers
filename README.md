@@ -22,6 +22,10 @@ input {
 	dataFolder => "/mypath/tofolder/"
 	threads => 10
 	refreshInterval => 300
+	proxyHost => "proxy"
+	proxyPort => 80
+	proxyUser => "proxyUser"
+	proxyPass => "proxyPass"
   }
 }
 ```
