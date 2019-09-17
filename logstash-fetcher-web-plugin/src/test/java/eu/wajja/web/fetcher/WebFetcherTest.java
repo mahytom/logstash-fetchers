@@ -7,7 +7,6 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.function.Consumer;
 
 import org.junit.Assert;
@@ -22,23 +21,19 @@ public class WebFetcherTest {
 	public void testWebFetcher() throws IOException {
 
 		Map<String, Object> configValues = new HashMap<>();
-		configValues.put(WebFetcher.CONFIG_URLS.name(), Arrays.asList("http://test_node_1"));
+		configValues.put(WebFetcher.CONFIG_URLS.name(), Arrays.asList("http://localhost"));
 		configValues.put(WebFetcher.CONFIG_DATA_FOLDER.name(), Files.createTempDirectory("tmp").toFile().getAbsolutePath());
 		configValues.put(WebFetcher.CONFIG_EXCLUDE.name(), Arrays.asList("css"));
 		configValues.put(WebFetcher.CONFIG_THREAD_POOL_SIZE.name(), 1l);
 		configValues.put(WebFetcher.CONFIG_REFRESH_INTERVAL.name(), 1l);
 
-		configValues.put(WebFetcher.PROXY_HOST.name(), "HOST");
-		configValues.put(WebFetcher.PROXY_PASS.name(), "PASS");
-		configValues.put(WebFetcher.PROXY_PORT.name(), 55l);
-		configValues.put(WebFetcher.PROXY_USER.name(), "USER");
-
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);
-
+		webFetcher.stop();
+		
 		TestConsumer testConsumer = new TestConsumer();
 		webFetcher.start(testConsumer);
-
+		
 		List<Map<String, Object>> events = testConsumer.getEvents();
 
 		Assert.assertEquals(0, events.size());

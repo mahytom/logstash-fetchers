@@ -30,7 +30,6 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field.Store;
@@ -74,12 +73,26 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE = PluginConfigSpec.arraySetting("exclude", Arrays.asList(".css", ".png"), false, false);
 	public static final PluginConfigSpec<String> CONFIG_DATA_FOLDER = PluginConfigSpec.stringSetting("dataFolder");
 	public static final PluginConfigSpec<Long> CONFIG_THREAD_POOL_SIZE = PluginConfigSpec.numSetting("threads", 10);
+	public static final PluginConfigSpec<Long> CONFIG_DEPTH = PluginConfigSpec.numSetting("depth", 0);
 	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting("refreshInterval", 86400l);
 
 	public static final PluginConfigSpec<String> PROXY_HOST = PluginConfigSpec.stringSetting("proxyHost");
 	public static final PluginConfigSpec<Long> PROXY_PORT = PluginConfigSpec.numSetting("proxyPort", 80);
 	public static final PluginConfigSpec<String> PROXY_USER = PluginConfigSpec.stringSetting("proxyUser");
 	public static final PluginConfigSpec<String> PROXY_PASS = PluginConfigSpec.stringSetting("proxyPass");
+
+	private static final String METADATA_EPOCH = "epochSecond";
+	private static final String METADATA_REFERENCE = "reference";
+	private static final String METADATA_CONTENT = "content";
+	private static final String METADATA_URL = "url";
+	private static final String METADATA_UUID = "uuid";
+	private static final String METADATA_STATUS = "status";
+	private static final String METADATA_CHILD = "childPages";
+	private static final String METADATA_EXTERNAL = "externalPages";
+
+	private static final String HTTP = "http://";
+	private static final String HTTPS = "https://";
+	private static final String ROBOT = "robot.txt";
 
 	private ThreadPoolExecutor executorService = null;
 	private StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
@@ -90,6 +103,7 @@ public class WebFetcher implements Input {
 	private Context context;
 	private String dataFolder;
 	private Long refreshSeconds;
+	private Long depth;
 	private List<String> urls;
 	private List<String> excludedUrls;
 
@@ -110,6 +124,7 @@ public class WebFetcher implements Input {
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.excludedUrls = config.get(CONFIG_EXCLUDE).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.refreshSeconds = config.get(CONFIG_REFRESH_INTERVAL);
+		this.depth = config.get(CONFIG_DEPTH);
 
 		String proxyHost = config.get(PROXY_HOST);
 		Long proxyPort = config.get(PROXY_PORT);
@@ -152,7 +167,7 @@ public class WebFetcher implements Input {
 				urls.parallelStream().forEach(url -> {
 
 					String id = Base64.getEncoder().encodeToString(url.getBytes());
-					Path indexPath = Paths.get(dataFolder + "/" + id + "_index");
+					Path indexPath = Paths.get(new StringBuilder(dataFolder).append("/").append(id).append("_index").toString());
 
 					try {
 
@@ -162,7 +177,7 @@ public class WebFetcher implements Input {
 						int code = urlConnection.getResponseCode();
 						String message = urlConnection.getResponseMessage();
 
-						if (code == 200) {
+						if (code == HttpURLConnection.HTTP_OK) {
 							extractRobot(url, directory, urlConnection, code, message);
 
 						} else {
@@ -170,8 +185,8 @@ public class WebFetcher implements Input {
 							LOGGER.error("Failed to read robot.txt url, status {}, {}, {}", code, url, message);
 
 							Map<String, Object> metadata = new HashMap<>();
-							metadata.put("reference", "robot.txt");
-							metadata.put("content", StringUtils.EMPTY);
+							metadata.put(METADATA_REFERENCE, ROBOT);
+							metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(ROBOT.getBytes()));
 
 							writeDocumentToIndex(directory, metadata);
 						}
@@ -202,12 +217,20 @@ public class WebFetcher implements Input {
 
 	private HttpURLConnection getHttpConnection(URL url) throws IOException {
 
+		HttpURLConnection httpURLConnection;
+
 		if (proxy == null) {
-			return (HttpURLConnection) url.openConnection();
+			httpURLConnection = (HttpURLConnection) url.openConnection();
 		} else {
-			return (HttpURLConnection) url.openConnection(proxy);
+			httpURLConnection = (HttpURLConnection) url.openConnection(proxy);
 		}
 
+		httpURLConnection.setReadTimeout(5000);
+		httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
+		httpURLConnection.addRequestProperty("User-Agent", "Mozilla");
+		httpURLConnection.addRequestProperty("Referer", "google.com");
+
+		return httpURLConnection;
 	}
 
 	private void extractRobot(String url, Directory directory, HttpURLConnection urlConnection, int code, String message) {
@@ -216,13 +239,12 @@ public class WebFetcher implements Input {
 
 			LOGGER.info("Read url, status {}, {}, {}", code, url, message);
 
-			byte[] bytes = IOUtils.toByteArray(inputStream);
-			String content = IOUtils.toString(bytes, "UTF-8");
+			byte[] content = IOUtils.toByteArray(inputStream);
 			urlConnection.disconnect();
 
 			Map<String, Object> metadata = new HashMap<>();
-			metadata.put("reference", "robot.txt");
-			metadata.put("content", content);
+			metadata.put(METADATA_REFERENCE, ROBOT);
+			metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(content));
 
 			writeDocumentToIndex(directory, metadata);
 
@@ -231,27 +253,30 @@ public class WebFetcher implements Input {
 		}
 	}
 
-	@SuppressWarnings("unchecked")
-	private void extractUrl(Directory directory, Consumer<Map<String, Object>> consumer, String urlString_, String rootUrl, LocalDateTime refreshDateTime) {
+	private void extractUrl(Directory directory, Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, LocalDateTime refreshDateTime) {
 
 		try {
 
-			String urlString = getUrlString(urlString_);
+			String urlString = getUrlString(urlStringTmp);
 			String uuid = UUID.randomUUID().toString();
 
 			Document document = getDocument(directory, urlString);
 
 			if (document != null) {
 
-				IndexableField indexableField = document.getFields().stream().filter(e -> e.name().equals("epochSecond")).findFirst().orElse(null);
-				Long epochSecond = Long.valueOf(indexableField.stringValue());
-				LocalDateTime indexTime = LocalDateTime.ofEpochSecond(epochSecond, 0, ZoneOffset.UTC);
+				IndexableField indexableField = document.getFields().stream().filter(e -> e.name().equals(METADATA_EPOCH)).findFirst().orElse(null);
 
-				if (indexTime.isAfter(refreshDateTime)) {
-					LOGGER.info("Skiping url {}", urlString);
-					return;
+				if (indexableField != null) {
+
+					Long epochSecond = Long.valueOf(indexableField.stringValue());
+					LocalDateTime indexTime = LocalDateTime.ofEpochSecond(epochSecond, 0, ZoneOffset.UTC);
+
+					if (indexTime.isAfter(refreshDateTime)) {
+						LOGGER.info("Skiping url {}", urlString);
+						return;
+					}
+
 				}
-
 				uuid = document.get("uuid");
 
 			}
@@ -265,59 +290,42 @@ public class WebFetcher implements Input {
 			int code = urlConnection.getResponseCode();
 			String message = urlConnection.getResponseMessage();
 
-			if (code == 200) {
+			if (code == HttpURLConnection.HTTP_OK) {
 
 				Map<String, List<String>> headers = urlConnection.getHeaderFields();
 
 				try (InputStream inputStream = urlConnection.getInputStream()) {
 
-					byte[] bytes = IOUtils.toByteArray(inputStream);
-					inputStream.close();
-
-					metadata = parseHtml(urlString, headers, bytes, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC), uuid);
-					consumer.accept(metadata);
-
-					LOGGER.info("Read url, status {}, {}, {}", code, url, message);
-					writeDocumentToIndex(directory, metadata);
-
-					List<String> childPages = (List<String>) metadata.get("childPages");
-
-					Optional.ofNullable(childPages).orElse(new ArrayList<>()).parallelStream().filter(href -> excludedUrls.stream().noneMatch(ex -> href.contains(ex))).forEach(childUrl ->
-
-					executorService.submit(() -> {
-
-						if (!childUrl.startsWith(urlString)) {
-							extractUrl(directory, consumer, rootUrl + childUrl, rootUrl, refreshDateTime);
-						} else {
-							extractUrl(directory, consumer, childUrl, rootUrl, refreshDateTime);
-						}
-
-					})
-
-					);
+					metadata = extractContent(directory, consumer, rootUrl, refreshDateTime, urlString, uuid, url, code, message, headers, inputStream);
 
 				} catch (Exception e1) {
 
 					LOGGER.error("Failed to read url, status {}, {}, {}", code, url, message);
 
-					metadata.put("reference", Base64.getEncoder().encodeToString(urlString.getBytes()));
-					metadata.put("epochSecond", LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
-					metadata.put("url", urlString);
-					metadata.put("uuid", uuid);
-					metadata.put("status", code);
+					metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(urlString.getBytes()));
+					metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
+					metadata.put(METADATA_URL, urlString);
+					metadata.put(METADATA_UUID, uuid);
+					metadata.put(METADATA_STATUS, code);
 
 					writeDocumentToIndex(directory, metadata);
 				}
+
+			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_SEE_OTHER) {
+
+				String newUrl = urlConnection.getHeaderField("Location");
+				LOGGER.info("Redirect needed to :  {}", newUrl);
+				extractUrl(directory, consumer, newUrl, rootUrl, refreshDateTime);
 
 			} else {
 
 				LOGGER.error("Failed to read url, status {}, {}, {}", code, url, message);
 
-				metadata.put("reference", Base64.getEncoder().encodeToString(urlString.getBytes()));
-				metadata.put("epochSecond", LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
-				metadata.put("url", urlString);
-				metadata.put("uuid", uuid);
-				metadata.put("status", code);
+				metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(urlString.getBytes()));
+				metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
+				metadata.put(METADATA_URL, urlString);
+				metadata.put(METADATA_UUID, uuid);
+				metadata.put(METADATA_STATUS, code);
 
 				writeDocumentToIndex(directory, metadata);
 			}
@@ -330,12 +338,46 @@ public class WebFetcher implements Input {
 
 	}
 
+	private Map<String, Object> extractContent(Directory directory, Consumer<Map<String, Object>> consumer, String rootUrl, LocalDateTime refreshDateTime, String urlString, String uuid, URL url, int code, String message, Map<String, List<String>> headers, InputStream inputStream)
+			throws IOException {
+
+		Map<String, Object> metadata;
+		byte[] bytes = IOUtils.toByteArray(inputStream);
+		inputStream.close();
+
+		metadata = parseHtml(urlString, headers, bytes, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC), uuid);
+		consumer.accept(metadata);
+
+		LOGGER.info("Read url, status {}, {}, {}", code, url, message);
+		writeDocumentToIndex(directory, metadata);
+
+		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
+		Optional.ofNullable(childPages).orElse(new ArrayList<>()).parallelStream().filter(href -> excludedUrls.stream().noneMatch(ex -> href.contains(ex))).forEach(childUrl ->
+
+		executorService.submit(() -> {
+
+			String host = url.getHost();
+
+			if (rootUrl.contains(host)) {
+				extractUrl(directory, consumer, childUrl, rootUrl, refreshDateTime);
+			} else {
+				extractUrl(directory, consumer, rootUrl + childUrl, rootUrl, refreshDateTime);
+
+			}
+
+		})
+
+		);
+
+		return metadata;
+	}
+
 	private synchronized Document getDocument(Directory directory, String url) throws IOException {
 
 		try (IndexReader indexReader = DirectoryReader.open(directory)) {
 
 			IndexSearcher isearcher = new IndexSearcher(indexReader);
-			Query query = new TermQuery(new Term("url", url));
+			Query query = new TermQuery(new Term(METADATA_URL, url));
 			TopDocs topDocs = isearcher.search(query, 1);
 
 			if (topDocs.totalHits.value > 0) {
@@ -357,7 +399,7 @@ public class WebFetcher implements Input {
 
 		try (IndexWriter iwriter = new IndexWriter(directory, indexWriterConfig)) {
 
-			metadata.entrySet().stream().filter(e -> !e.getKey().equals("content")).forEach(e -> {
+			metadata.entrySet().stream().filter(e -> !e.getKey().equals(METADATA_CONTENT)).forEach(e -> {
 
 				if (e.getValue() instanceof String) {
 					document.add(new StringField(e.getKey(), (String) e.getValue(), Store.YES));
@@ -377,10 +419,6 @@ public class WebFetcher implements Input {
 
 	private String getUrlString(String urlString) {
 
-		if (urlString.contains("?")) {
-			urlString = urlString.substring(0, urlString.indexOf('?'));
-		}
-
 		if (urlString.contains("#")) {
 			urlString = urlString.substring(0, urlString.indexOf('#'));
 		}
@@ -394,40 +432,44 @@ public class WebFetcher implements Input {
 
 	private Map<String, Object> parseHtml(String urlString, Map<String, List<String>> headers, byte[] bytes, Long epochSecond, String uuid) throws IOException {
 
-		String bodyHtml = IOUtils.toString(bytes, "UTF-8");
-
 		Map<String, Object> metadata = new HashMap<>();
-		metadata.put("reference", Base64.getEncoder().encodeToString(urlString.getBytes()));
-		metadata.put("content", bodyHtml);
-		metadata.put("epochSecond", epochSecond);
-		metadata.put("url", urlString);
-		metadata.put("uuid", uuid);
-		metadata.put("status", 200);
+		metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(urlString.getBytes()));
+		metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
+		metadata.put(METADATA_EPOCH, epochSecond);
+		metadata.put(METADATA_URL, urlString);
+		metadata.put(METADATA_UUID, uuid);
+		metadata.put(METADATA_STATUS, 200);
 
-		headers.entrySet().stream().filter(entry -> entry.getKey() != null).forEach(entry -> {
-			metadata.put(entry.getKey(), entry.getValue());
-		});
+		headers.entrySet().stream().filter(entry -> entry.getKey() != null).forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
 
 		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
 
+			String bodyHtml = IOUtils.toString(bytes, "UTF-8");
 			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
 
 			Elements elements = document.getElementsByAttribute("href");
+			String simpleUrlString = getSimpleUrl(urlString);
 
-			List<String> childPages = elements.stream().map(e -> e.attr("href")).filter(href -> href.startsWith("/") || href.startsWith(urlString)).collect(Collectors.toList());
-			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> href.startsWith("http") && !href.startsWith(urlString)).collect(Collectors.toList());
+			List<String> childPages = elements.stream().map(e -> e.attr("href")).filter(href -> href.startsWith("/") || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
+			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> (href.startsWith(HTTP) || href.startsWith(HTTPS)) && !href.startsWith(HTTP + simpleUrlString) && !href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
 
-			metadata.put("childPages", cleanUpList(childPages));
-			metadata.put("externalPages", cleanUpList(externalPages));
+			metadata.put(METADATA_CHILD, cleanUpList(childPages));
+			metadata.put(METADATA_EXTERNAL, cleanUpList(externalPages));
 
 		}
 
 		return metadata;
 	}
 
+	private String getSimpleUrl(String urlString) {
+
+		String simpleUrlString = urlString.replace(HTTP, "").replace(HTTPS, "");
+		return simpleUrlString.substring(0, simpleUrlString.indexOf("?"));
+	}
+
 	private Object cleanUpList(List<String> pages) {
 
-		Set<String> childPages = new HashSet<>(pages.stream().map(x -> getUrlString(x)).collect(Collectors.toList()));
+		Set<String> childPages = new HashSet<>(pages.stream().map(this::getUrlString).collect(Collectors.toList()));
 		return new ArrayList<>(childPages);
 	}
 
@@ -446,7 +488,7 @@ public class WebFetcher implements Input {
 	 */
 	@Override
 	public Collection<PluginConfigSpec<?>> configSchema() {
-		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_EXCLUDE, CONFIG_THREAD_POOL_SIZE, CONFIG_REFRESH_INTERVAL, PROXY_HOST, PROXY_PASS, PROXY_PORT, PROXY_USER);
+		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_EXCLUDE, CONFIG_THREAD_POOL_SIZE, CONFIG_REFRESH_INTERVAL, PROXY_HOST, PROXY_PASS, PROXY_PORT, PROXY_USER, CONFIG_DEPTH);
 	}
 
 	@Override
