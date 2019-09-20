@@ -8,9 +8,13 @@ import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.net.PasswordAuthentication;
 import java.net.Proxy;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.KeyManagementException;
+import java.security.NoSuchAlgorithmException;
+import java.security.cert.X509Certificate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -28,6 +32,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+
+import javax.net.ssl.HostnameVerifier;
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLSession;
+import javax.net.ssl.TrustManager;
+import javax.net.ssl.X509TrustManager;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -82,6 +93,7 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<Long> CONFIG_MAX_DEPTH = PluginConfigSpec.numSetting("maxdepth", 0);
 	public static final PluginConfigSpec<Long> CONFIG_MAX_PAGES = PluginConfigSpec.numSetting("maxpages", 0);
 	public static final PluginConfigSpec<Boolean> CONFIG_WAIT_JAVASCRIPT = PluginConfigSpec.booleanSetting("waitJavascript", false);
+	public static final PluginConfigSpec<Boolean> CONFIG_DISABLE_SSL_CHECK = PluginConfigSpec.booleanSetting("sslcheck", true);
 	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting("refreshInterval", 86400l);
 
 	public static final PluginConfigSpec<String> PROXY_HOST = PluginConfigSpec.stringSetting("proxyHost");
@@ -118,7 +130,6 @@ public class WebFetcher implements Input {
 	private List<String> urls;
 	private List<String> excludedUrls;
 	private Map<String, Long> maxPagesCount = new HashMap<>();
-
 	private Proxy proxy = null;
 
 	/**
@@ -167,6 +178,41 @@ public class WebFetcher implements Input {
 			proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort.intValue()));
 		}
 
+		Boolean disableSSLcheck = config.get(CONFIG_DISABLE_SSL_CHECK);
+
+		if (!disableSSLcheck) {
+
+			TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
+				public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+					return null;
+				}
+
+				public void checkClientTrusted(X509Certificate[] certs, String authType) {
+				}
+
+				public void checkServerTrusted(X509Certificate[] certs, String authType) {
+				}
+			} };
+
+			try {
+				SSLContext sc = SSLContext.getInstance("SSL");
+				sc.init(null, trustAllCerts, new java.security.SecureRandom());
+				HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+
+			} catch (NoSuchAlgorithmException | KeyManagementException e) {
+				LOGGER.error("Failed to set authentication cert trust", e);
+			}
+
+			HostnameVerifier allHostsValid = new HostnameVerifier() {
+				public boolean verify(String hostname, SSLSession session) {
+					return true;
+				}
+			};
+
+			HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
+
+		}
+
 		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(config.get(CONFIG_THREAD_POOL_SIZE).intValue());
 	}
 
@@ -189,7 +235,7 @@ public class WebFetcher implements Input {
 					try {
 
 						Directory directory = FSDirectory.open(indexPath);
-						URL robotUrl = new URL(url + "/robot.txt");
+						URL robotUrl = new URL(url + "/" + ROBOT);
 						HttpURLConnection urlConnection = getHttpConnection(robotUrl);
 
 						int code = urlConnection.getResponseCode();
@@ -200,7 +246,7 @@ public class WebFetcher implements Input {
 
 						} else {
 
-							LOGGER.error("Failed to read robot.txt url, status {}, {}, {}", code, url, message);
+							LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", code, url, message);
 
 							Map<String, Object> metadata = new HashMap<>();
 							metadata.put(METADATA_REFERENCE, ROBOT);
@@ -245,6 +291,7 @@ public class WebFetcher implements Input {
 			httpURLConnection = (HttpURLConnection) url.openConnection(proxy);
 		}
 
+		httpURLConnection.setConnectTimeout(timeout.intValue());
 		httpURLConnection.setReadTimeout(timeout.intValue());
 		httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
 		httpURLConnection.addRequestProperty("User-Agent", "Mozilla");
@@ -273,7 +320,9 @@ public class WebFetcher implements Input {
 		}
 	}
 
-	private void extractUrl(Directory directory, Consumer<Map<String, Object>> consumer, String urlString, String rootUrl, LocalDateTime refreshDateTime, Long depth) {
+	private void extractUrl(Directory directory, Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, LocalDateTime refreshDateTime, Long depth) {
+
+		String urlString = urlStringTmp;
 
 		try {
 
@@ -283,7 +332,7 @@ public class WebFetcher implements Input {
 				maxPagesCount.put(rootUrl, maxPagesCount.get(rootUrl) + 1);
 			}
 
-			urlString = getUrlString(urlString, rootUrl);
+			urlString = getUrlString(urlStringTmp, rootUrl);
 			String uuid = UUID.randomUUID().toString();
 
 			Document document = getDocument(directory, urlString);
@@ -356,6 +405,19 @@ public class WebFetcher implements Input {
 			}
 
 			urlConnection.disconnect();
+
+		} catch (SocketTimeoutException e) {
+
+			LOGGER.warn("Url {} timeout, sleeping and trying again", urlString);
+
+			try {
+
+				Thread.sleep(3000);
+				extractUrl(directory, consumer, urlString, rootUrl, refreshDateTime, depth);
+
+			} catch (InterruptedException e1) {
+				Thread.currentThread().interrupt();
+			}
 
 		} catch (Exception e) {
 			LOGGER.error("Failed to retrieve URL: {}", urlString, e);
@@ -536,7 +598,7 @@ public class WebFetcher implements Input {
 	 */
 	@Override
 	public Collection<PluginConfigSpec<?>> configSchema() {
-		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_EXCLUDE, CONFIG_THREAD_POOL_SIZE, CONFIG_REFRESH_INTERVAL, PROXY_HOST, PROXY_PASS, PROXY_PORT, PROXY_USER, CONFIG_MAX_DEPTH, CONFIG_TIMEOUT, CONFIG_MAX_PAGES, CONFIG_WAIT_JAVASCRIPT);
+		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_DISABLE_SSL_CHECK, CONFIG_EXCLUDE, CONFIG_THREAD_POOL_SIZE, CONFIG_REFRESH_INTERVAL, PROXY_HOST, PROXY_PASS, PROXY_PORT, PROXY_USER, CONFIG_MAX_DEPTH, CONFIG_TIMEOUT, CONFIG_MAX_PAGES, CONFIG_WAIT_JAVASCRIPT);
 	}
 
 	@Override
