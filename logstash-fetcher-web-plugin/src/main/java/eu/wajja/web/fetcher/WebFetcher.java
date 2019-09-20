@@ -380,9 +380,11 @@ public class WebFetcher implements Input {
 
 		if (maxDepth == 0 || newDepth <= maxDepth) {
 
-			Optional.ofNullable(childPages).orElse(new ArrayList<>()).parallelStream().filter(href -> excludedUrls.stream().noneMatch(ex -> href.contains(ex))).forEach(childUrl ->
+			Optional.ofNullable(childPages).orElse(new ArrayList<>()).parallelStream().filter(href -> {
 
-			executorService.submit(() -> extractUrl(directory, consumer, childUrl, rootUrl, refreshDateTime, newDepth)));
+				return excludedUrls.stream().noneMatch(ex -> href.matches(ex));
+
+			}).forEach(childUrl -> executorService.submit(() -> extractUrl(directory, consumer, childUrl, rootUrl, refreshDateTime, newDepth)));
 		}
 
 	}
@@ -486,7 +488,7 @@ public class WebFetcher implements Input {
 				driver.quit();
 
 				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bodyHtml.getBytes()));
-				
+
 			} else {
 				bodyHtml = IOUtils.toString(bytes, "UTF-8");
 			}
