@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.net.Authenticator;
 import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
+import java.net.MalformedURLException;
 import java.net.PasswordAuthentication;
 import java.net.Proxy;
 import java.net.URL;
@@ -21,7 +22,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -30,6 +30,7 @@ import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field.Store;
@@ -52,6 +53,10 @@ import org.jsoup.select.Elements;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.machinepublishers.jbrowserdriver.JBrowserDriver;
+import com.machinepublishers.jbrowserdriver.Settings;
+import com.machinepublishers.jbrowserdriver.Timezone;
+
 import co.elastic.logstash.api.Configuration;
 import co.elastic.logstash.api.Context;
 import co.elastic.logstash.api.Input;
@@ -73,7 +78,10 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE = PluginConfigSpec.arraySetting("exclude", Arrays.asList(".css", ".png"), false, false);
 	public static final PluginConfigSpec<String> CONFIG_DATA_FOLDER = PluginConfigSpec.stringSetting("dataFolder");
 	public static final PluginConfigSpec<Long> CONFIG_THREAD_POOL_SIZE = PluginConfigSpec.numSetting("threads", 10);
-	public static final PluginConfigSpec<Long> CONFIG_DEPTH = PluginConfigSpec.numSetting("depth", 0);
+	public static final PluginConfigSpec<Long> CONFIG_TIMEOUT = PluginConfigSpec.numSetting("timeout", 8000);
+	public static final PluginConfigSpec<Long> CONFIG_MAX_DEPTH = PluginConfigSpec.numSetting("maxdepth", 0);
+	public static final PluginConfigSpec<Long> CONFIG_MAX_PAGES = PluginConfigSpec.numSetting("maxpages", 0);
+	public static final PluginConfigSpec<Boolean> CONFIG_WAIT_JAVASCRIPT = PluginConfigSpec.booleanSetting("waitJavascript", false);
 	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting("refreshInterval", 86400l);
 
 	public static final PluginConfigSpec<String> PROXY_HOST = PluginConfigSpec.stringSetting("proxyHost");
@@ -103,9 +111,13 @@ public class WebFetcher implements Input {
 	private Context context;
 	private String dataFolder;
 	private Long refreshSeconds;
-	private Long depth;
+	private Long maxDepth;
+	private Long maxPages;
+	private Long timeout;
+	private Boolean waitJavascript;
 	private List<String> urls;
 	private List<String> excludedUrls;
+	private Map<String, Long> maxPagesCount = new HashMap<>();
 
 	private Proxy proxy = null;
 
@@ -124,7 +136,10 @@ public class WebFetcher implements Input {
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.excludedUrls = config.get(CONFIG_EXCLUDE).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.refreshSeconds = config.get(CONFIG_REFRESH_INTERVAL);
-		this.depth = config.get(CONFIG_DEPTH);
+		this.maxDepth = config.get(CONFIG_MAX_DEPTH);
+		this.maxPages = config.get(CONFIG_MAX_PAGES);
+		this.timeout = config.get(CONFIG_TIMEOUT);
+		this.waitJavascript = config.get(CONFIG_WAIT_JAVASCRIPT);
 
 		String proxyHost = config.get(PROXY_HOST);
 		Long proxyPort = config.get(PROXY_PORT);
@@ -166,19 +181,22 @@ public class WebFetcher implements Input {
 
 				urls.parallelStream().forEach(url -> {
 
+					LOGGER.info("Starting fetch for URL: {}", url);
+
 					String id = Base64.getEncoder().encodeToString(url.getBytes());
 					Path indexPath = Paths.get(new StringBuilder(dataFolder).append("/").append(id).append("_index").toString());
 
 					try {
 
 						Directory directory = FSDirectory.open(indexPath);
-						HttpURLConnection urlConnection = getHttpConnection(new URL(url + "/robot.txt"));
+						URL robotUrl = new URL(url + "/robot.txt");
+						HttpURLConnection urlConnection = getHttpConnection(robotUrl);
 
 						int code = urlConnection.getResponseCode();
 						String message = urlConnection.getResponseMessage();
 
 						if (code == HttpURLConnection.HTTP_OK) {
-							extractRobot(url, directory, urlConnection, code, message);
+							extractRobot(robotUrl.toString(), directory, urlConnection, code, message);
 
 						} else {
 
@@ -191,11 +209,11 @@ public class WebFetcher implements Input {
 							writeDocumentToIndex(directory, metadata);
 						}
 
-						extractUrl(directory, consumer, url, url, refreshDateTime);
+						maxPagesCount.put(url, 0l);
+						extractUrl(directory, consumer, url, url, refreshDateTime, 0l);
 
 						while (executorService.getActiveCount() > 0) {
 							Thread.sleep(1000);
-							LOGGER.info("Waiting for threads to be processed");
 						}
 
 						directory.close();
@@ -213,6 +231,8 @@ public class WebFetcher implements Input {
 		} catch (Exception e) {
 			LOGGER.error("Failed", e);
 		}
+
+		maxPagesCount = new HashMap<>();
 	}
 
 	private HttpURLConnection getHttpConnection(URL url) throws IOException {
@@ -225,7 +245,7 @@ public class WebFetcher implements Input {
 			httpURLConnection = (HttpURLConnection) url.openConnection(proxy);
 		}
 
-		httpURLConnection.setReadTimeout(5000);
+		httpURLConnection.setReadTimeout(timeout.intValue());
 		httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
 		httpURLConnection.addRequestProperty("User-Agent", "Mozilla");
 		httpURLConnection.addRequestProperty("Referer", "google.com");
@@ -253,11 +273,17 @@ public class WebFetcher implements Input {
 		}
 	}
 
-	private void extractUrl(Directory directory, Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, LocalDateTime refreshDateTime) {
+	private void extractUrl(Directory directory, Consumer<Map<String, Object>> consumer, String urlString, String rootUrl, LocalDateTime refreshDateTime, Long depth) {
 
 		try {
 
-			String urlString = getUrlString(urlStringTmp);
+			if (maxPages != 0 && maxPagesCount.get(rootUrl) >= maxPages) {
+				return;
+			} else {
+				maxPagesCount.put(rootUrl, maxPagesCount.get(rootUrl) + 1);
+			}
+
+			urlString = getUrlString(urlString, rootUrl);
 			String uuid = UUID.randomUUID().toString();
 
 			Document document = getDocument(directory, urlString);
@@ -272,7 +298,6 @@ public class WebFetcher implements Input {
 					LocalDateTime indexTime = LocalDateTime.ofEpochSecond(epochSecond, 0, ZoneOffset.UTC);
 
 					if (indexTime.isAfter(refreshDateTime)) {
-						LOGGER.info("Skiping url {}", urlString);
 						return;
 					}
 
@@ -296,11 +321,11 @@ public class WebFetcher implements Input {
 
 				try (InputStream inputStream = urlConnection.getInputStream()) {
 
-					metadata = extractContent(directory, consumer, rootUrl, refreshDateTime, urlString, uuid, url, code, message, headers, inputStream);
+					extractContent(directory, consumer, rootUrl, refreshDateTime, urlString, uuid, url, code, message, headers, inputStream, depth);
 
 				} catch (Exception e1) {
 
-					LOGGER.error("Failed to read url, status {}, {}, {}", code, url, message);
+					LOGGER.error("Failed to read url, status {}, {}, {}", code, url, message, e1);
 
 					metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(urlString.getBytes()));
 					metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
@@ -315,7 +340,7 @@ public class WebFetcher implements Input {
 
 				String newUrl = urlConnection.getHeaderField("Location");
 				LOGGER.info("Redirect needed to :  {}", newUrl);
-				extractUrl(directory, consumer, newUrl, rootUrl, refreshDateTime);
+				extractUrl(directory, consumer, newUrl, rootUrl, refreshDateTime, depth);
 
 			} else {
 
@@ -333,43 +358,33 @@ public class WebFetcher implements Input {
 			urlConnection.disconnect();
 
 		} catch (Exception e) {
-			LOGGER.error("Not a valid URL", e);
+			LOGGER.error("Failed to retrieve URL: {}", urlString, e);
 		}
 
 	}
 
-	private Map<String, Object> extractContent(Directory directory, Consumer<Map<String, Object>> consumer, String rootUrl, LocalDateTime refreshDateTime, String urlString, String uuid, URL url, int code, String message, Map<String, List<String>> headers, InputStream inputStream)
-			throws IOException {
+	private void extractContent(Directory directory, Consumer<Map<String, Object>> consumer, String rootUrl, LocalDateTime refreshDateTime, String urlString, String uuid, URL url, int code, String message, Map<String, List<String>> headers, InputStream inputStream, Long depth) throws IOException {
 
 		Map<String, Object> metadata;
 		byte[] bytes = IOUtils.toByteArray(inputStream);
 		inputStream.close();
 
-		metadata = parseHtml(urlString, headers, bytes, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC), uuid);
+		metadata = parseHtml(urlString, rootUrl, headers, bytes, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC), uuid);
 		consumer.accept(metadata);
 
-		LOGGER.info("Read url, status {}, {}, {}", code, url, message);
+		LOGGER.info("Read url, status {}, {}, {}, depth {}, pages {}", code, url, message, depth, maxPagesCount.get(rootUrl));
 		writeDocumentToIndex(directory, metadata);
 
 		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
-		Optional.ofNullable(childPages).orElse(new ArrayList<>()).parallelStream().filter(href -> excludedUrls.stream().noneMatch(ex -> href.contains(ex))).forEach(childUrl ->
+		Long newDepth = depth + 1;
 
-		executorService.submit(() -> {
+		if (maxDepth == 0 || newDepth <= maxDepth) {
 
-			String host = url.getHost();
+			Optional.ofNullable(childPages).orElse(new ArrayList<>()).parallelStream().filter(href -> excludedUrls.stream().noneMatch(ex -> href.contains(ex))).forEach(childUrl ->
 
-			if (rootUrl.contains(host)) {
-				extractUrl(directory, consumer, childUrl, rootUrl, refreshDateTime);
-			} else {
-				extractUrl(directory, consumer, rootUrl + childUrl, rootUrl, refreshDateTime);
+			executorService.submit(() -> extractUrl(directory, consumer, childUrl, rootUrl, refreshDateTime, newDepth)));
+		}
 
-			}
-
-		})
-
-		);
-
-		return metadata;
 	}
 
 	private synchronized Document getDocument(Directory directory, String url) throws IOException {
@@ -417,7 +432,24 @@ public class WebFetcher implements Input {
 
 	}
 
-	private String getUrlString(String urlString) {
+	private String getUrlString(String urlString, String rootUrl) throws MalformedURLException {
+
+		if (!urlString.startsWith("http") && urlString.startsWith("/")) {
+
+			URL urlRoot = new URL(rootUrl);
+			String path = urlRoot.getPath();
+
+			if (StringUtils.isEmpty(path) || path.equals("/")) {
+				urlString = urlRoot + urlString;
+			} else {
+				urlString = rootUrl.replace(path, "") + urlString;
+			}
+
+		}
+
+		if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
+			urlString = rootUrl + urlString;
+		}
 
 		if (urlString.contains("#")) {
 			urlString = urlString.substring(0, urlString.indexOf('#'));
@@ -430,7 +462,7 @@ public class WebFetcher implements Input {
 		return urlString;
 	}
 
-	private Map<String, Object> parseHtml(String urlString, Map<String, List<String>> headers, byte[] bytes, Long epochSecond, String uuid) throws IOException {
+	private Map<String, Object> parseHtml(String urlString, String rootUrl, Map<String, List<String>> headers, byte[] bytes, Long epochSecond, String uuid) throws IOException {
 
 		Map<String, Object> metadata = new HashMap<>();
 		metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(urlString.getBytes()));
@@ -444,17 +476,32 @@ public class WebFetcher implements Input {
 
 		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
 
-			String bodyHtml = IOUtils.toString(bytes, "UTF-8");
+			String bodyHtml = null;
+
+			if (waitJavascript) {
+
+				JBrowserDriver driver = new JBrowserDriver(Settings.builder().timezone(Timezone.EUROPE_BRUSSELS).build());
+				driver.get(urlString);
+				bodyHtml = driver.getPageSource();
+				driver.quit();
+
+				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bodyHtml.getBytes()));
+				
+			} else {
+				bodyHtml = IOUtils.toString(bytes, "UTF-8");
+			}
+
 			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
 
 			Elements elements = document.getElementsByAttribute("href");
-			String simpleUrlString = getSimpleUrl(urlString);
+			String simpleUrlString = getSimpleUrl(rootUrl);
 
-			List<String> childPages = elements.stream().map(e -> e.attr("href")).filter(href -> href.startsWith("/") || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
+			List<String> childPages = elements.stream().map(e -> e.attr("href")).filter(href -> href.startsWith("/") || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString)).filter(href -> !href.equals("/") && !href.startsWith("//")).collect(Collectors.toList());
+
 			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> (href.startsWith(HTTP) || href.startsWith(HTTPS)) && !href.startsWith(HTTP + simpleUrlString) && !href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
 
-			metadata.put(METADATA_CHILD, cleanUpList(childPages));
-			metadata.put(METADATA_EXTERNAL, cleanUpList(externalPages));
+			metadata.put(METADATA_CHILD, new ArrayList<>(new HashSet<>(childPages)));
+			metadata.put(METADATA_EXTERNAL, new ArrayList<>(new HashSet<>(externalPages)));
 
 		}
 
@@ -464,13 +511,12 @@ public class WebFetcher implements Input {
 	private String getSimpleUrl(String urlString) {
 
 		String simpleUrlString = urlString.replace(HTTP, "").replace(HTTPS, "");
-		return simpleUrlString.substring(0, simpleUrlString.indexOf("?"));
-	}
 
-	private Object cleanUpList(List<String> pages) {
+		if (simpleUrlString.contains("?")) {
+			return simpleUrlString.substring(0, simpleUrlString.indexOf('?'));
+		}
 
-		Set<String> childPages = new HashSet<>(pages.stream().map(this::getUrlString).collect(Collectors.toList()));
-		return new ArrayList<>(childPages);
+		return simpleUrlString;
 	}
 
 	@Override
@@ -488,7 +534,7 @@ public class WebFetcher implements Input {
 	 */
 	@Override
 	public Collection<PluginConfigSpec<?>> configSchema() {
-		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_EXCLUDE, CONFIG_THREAD_POOL_SIZE, CONFIG_REFRESH_INTERVAL, PROXY_HOST, PROXY_PASS, PROXY_PORT, PROXY_USER, CONFIG_DEPTH);
+		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_EXCLUDE, CONFIG_THREAD_POOL_SIZE, CONFIG_REFRESH_INTERVAL, PROXY_HOST, PROXY_PASS, PROXY_PORT, PROXY_USER, CONFIG_MAX_DEPTH, CONFIG_TIMEOUT, CONFIG_MAX_PAGES, CONFIG_WAIT_JAVASCRIPT);
 	}
 
 	@Override
