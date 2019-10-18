@@ -69,7 +69,9 @@ import com.machinepublishers.jbrowserdriver.JBrowserDriver;
 import com.machinepublishers.jbrowserdriver.ProxyConfig;
 import com.machinepublishers.jbrowserdriver.ProxyConfig.Type;
 import com.machinepublishers.jbrowserdriver.Settings;
+import com.machinepublishers.jbrowserdriver.Settings.Builder;
 import com.machinepublishers.jbrowserdriver.Timezone;
+import com.machinepublishers.jbrowserdriver.UserAgent;
 
 import co.elastic.logstash.api.Configuration;
 import co.elastic.logstash.api.Context;
@@ -88,21 +90,35 @@ public class WebFetcher implements Input {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(WebFetcher.class);
 
-	public static final PluginConfigSpec<List<Object>> CONFIG_URLS = PluginConfigSpec.arraySetting("urls");
-	public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE = PluginConfigSpec.arraySetting("exclude", Arrays.asList(".css", ".png"), false, false);
-	public static final PluginConfigSpec<String> CONFIG_DATA_FOLDER = PluginConfigSpec.stringSetting("dataFolder");
-	public static final PluginConfigSpec<Long> CONFIG_THREAD_POOL_SIZE = PluginConfigSpec.numSetting("threads", 10);
-	public static final PluginConfigSpec<Long> CONFIG_TIMEOUT = PluginConfigSpec.numSetting("timeout", 8000);
-	public static final PluginConfigSpec<Long> CONFIG_MAX_DEPTH = PluginConfigSpec.numSetting("maxdepth", 0);
-	public static final PluginConfigSpec<Long> CONFIG_MAX_PAGES = PluginConfigSpec.numSetting("maxpages", 0);
-	public static final PluginConfigSpec<Boolean> CONFIG_WAIT_JAVASCRIPT = PluginConfigSpec.booleanSetting("waitJavascript", false);
-	public static final PluginConfigSpec<Boolean> CONFIG_DISABLE_SSL_CHECK = PluginConfigSpec.booleanSetting("sslcheck", true);
-	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting("refreshInterval", 86400l);
+	public static final String PROPERTY_URLS = "urls";
+	public static final String PROPERTY_EXCLUDE = "exclude";
+	public static final String PROPERTY_DATAFOLDER = "dataFolder";
+	public static final String PROPERTY_THREADS = "threads";
+	public static final String PROPERTY_TIMEOUT = "timeout";
+	public static final String PROPERTY_MAX_DEPTH = "maxdepth";
+	public static final String PROPERTY_MAX_PAGES = "maxpages";
+	public static final String PROPERTY_JAVASCRIPT = "waitJavascript";
+	public static final String PROPERTY_SSL_CHECK = "sslcheck";
+	public static final String PROPERTY_REFRESH_INTERVAL = "refreshInterval";
+	public static final String PROPERTY_PROXY_HOST = "proxyHost";
+	public static final String PROPERTY_PROXY_PORT = "proxyPort";
+	public static final String PROPERTY_PROXY_USER = "proxyUser";
+	public static final String PROPERTY_PROXY_PASS = "proxyPass";
 
-	public static final PluginConfigSpec<String> PROXY_HOST = PluginConfigSpec.stringSetting("proxyHost");
-	public static final PluginConfigSpec<Long> PROXY_PORT = PluginConfigSpec.numSetting("proxyPort", 80);
-	public static final PluginConfigSpec<String> PROXY_USER = PluginConfigSpec.stringSetting("proxyUser");
-	public static final PluginConfigSpec<String> PROXY_PASS = PluginConfigSpec.stringSetting("proxyPass");
+	public static final PluginConfigSpec<List<Object>> CONFIG_URLS = PluginConfigSpec.arraySetting(PROPERTY_URLS);
+	public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE = PluginConfigSpec.arraySetting(PROPERTY_EXCLUDE, Arrays.asList(".css", ".png"), false, false);
+	public static final PluginConfigSpec<String> CONFIG_DATA_FOLDER = PluginConfigSpec.stringSetting(PROPERTY_DATAFOLDER);
+	public static final PluginConfigSpec<Long> CONFIG_THREAD_POOL_SIZE = PluginConfigSpec.numSetting(PROPERTY_THREADS, 10);
+	public static final PluginConfigSpec<Long> CONFIG_TIMEOUT = PluginConfigSpec.numSetting(PROPERTY_TIMEOUT, 8000);
+	public static final PluginConfigSpec<Long> CONFIG_MAX_DEPTH = PluginConfigSpec.numSetting(PROPERTY_MAX_DEPTH, 0);
+	public static final PluginConfigSpec<Long> CONFIG_MAX_PAGES = PluginConfigSpec.numSetting(PROPERTY_MAX_PAGES, 0);
+	public static final PluginConfigSpec<Boolean> CONFIG_WAIT_JAVASCRIPT = PluginConfigSpec.booleanSetting(PROPERTY_JAVASCRIPT, false);
+	public static final PluginConfigSpec<Boolean> CONFIG_DISABLE_SSL_CHECK = PluginConfigSpec.booleanSetting(PROPERTY_SSL_CHECK, true);
+	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting(PROPERTY_REFRESH_INTERVAL, 86400l);
+	public static final PluginConfigSpec<String> PROXY_HOST = PluginConfigSpec.stringSetting(PROPERTY_PROXY_HOST);
+	public static final PluginConfigSpec<Long> PROXY_PORT = PluginConfigSpec.numSetting(PROPERTY_PROXY_PORT, 80);
+	public static final PluginConfigSpec<String> PROXY_USER = PluginConfigSpec.stringSetting(PROPERTY_PROXY_USER);
+	public static final PluginConfigSpec<String> PROXY_PASS = PluginConfigSpec.stringSetting(PROPERTY_PROXY_PASS);
 
 	private static final String METADATA_EPOCH = "epochSecond";
 	private static final String METADATA_REFERENCE = "reference";
@@ -121,7 +137,7 @@ public class WebFetcher implements Input {
 	private ThreadPoolExecutor executorService = null;
 	private StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
 	private final CountDownLatch done = new CountDownLatch(1);
-	private volatile boolean stopped;
+	protected volatile boolean stopped;
 
 	private String threadId;
 	private Context context;
@@ -140,6 +156,7 @@ public class WebFetcher implements Input {
 	private Long proxyPort;
 	private String proxyUser;
 	private String proxyPass;
+	private WebDriver driver;
 
 	/**
 	 * Mandatory constructor
@@ -224,6 +241,19 @@ public class WebFetcher implements Input {
 		}
 
 		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(config.get(CONFIG_THREAD_POOL_SIZE).intValue());
+
+		Builder settings = Settings.builder().timezone(Timezone.EUROPE_BRUSSELS).connectTimeout(this.timeout.intValue()).maxConnections(50).quickRender(true).blockMedia(true).userAgent(UserAgent.CHROME).logger("ch.qos.logback.core.ConsoleAppender").processes(2)
+				.loggerLevel(java.util.logging.Level.INFO).hostnameVerification(false);
+
+		if (proxyUser != null && proxyPass != null && proxyPort != null) {
+
+			ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser, proxyPass);
+			settings.proxy(proxyConfig);
+			settings.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=");
+		}
+
+		driver = new JBrowserDriver(settings.build());
+
 	}
 
 	@Override
@@ -540,10 +570,6 @@ public class WebFetcher implements Input {
 			urlString = rootUrl + urlString;
 		}
 
-		if (urlString.contains("#")) {
-			urlString = urlString.substring(0, urlString.indexOf('#'));
-		}
-
 		if (urlString.endsWith("/") && !urlString.equals(rootUrl)) {
 			urlString = urlString.substring(0, urlString.lastIndexOf('/'));
 		}
@@ -570,28 +596,8 @@ public class WebFetcher implements Input {
 
 			if (waitJavascript) {
 
-				WebDriver driver = null;
-
-				if (proxyUser != null && proxyPass != null) {
-
-					ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser, proxyPass);
-					driver = new JBrowserDriver(Settings.builder().timezone(Timezone.EUROPE_BRUSSELS)
-							.proxy(proxyConfig)
-							.loggerLevel(java.util.logging.Level.INFO)
-							.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=")
-							.hostnameVerification(false).build());
-
-				} else {
-					
-					 driver = new JBrowserDriver(Settings.builder().timezone(Timezone.EUROPE_BRUSSELS)
-	                            .loggerLevel(java.util.logging.Level.INFO)
-	                            .hostnameVerification(false)
-	                            .build());
-				}
-
 				driver.get(urlString);
 				bodyHtml = driver.getPageSource();
-				driver.quit();
 
 				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bodyHtml.getBytes()));
 
@@ -630,11 +636,13 @@ public class WebFetcher implements Input {
 
 	@Override
 	public void stop() {
+		driver.quit();
 		stopped = true;
 	}
 
 	@Override
 	public void awaitStop() throws InterruptedException {
+		driver.quit();
 		done.await();
 	}
 

@@ -2,6 +2,7 @@ package eu.wajja.web.fetcher;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,19 +28,16 @@ public class WebFetcherTest {
 	}
 
 	@Test
-	public void testWebFetcher() throws IOException {
+	public void testWebFetcher() {
 
 		Map<String, Object> configValues = new HashMap<>();
-		configValues.put(WebFetcher.CONFIG_URLS.name(), properties.get(WebFetcher.CONFIG_URLS));
-		configValues.put(WebFetcher.CONFIG_DATA_FOLDER.name(), properties.get(WebFetcher.CONFIG_DATA_FOLDER));
-		configValues.put(WebFetcher.CONFIG_EXCLUDE.name(), properties.get(WebFetcher.CONFIG_EXCLUDE));
-		configValues.put(WebFetcher.CONFIG_THREAD_POOL_SIZE.name(), properties.get(WebFetcher.CONFIG_THREAD_POOL_SIZE));
-		configValues.put(WebFetcher.CONFIG_REFRESH_INTERVAL.name(), properties.get(WebFetcher.CONFIG_REFRESH_INTERVAL));
-		configValues.put(WebFetcher.CONFIG_WAIT_JAVASCRIPT.name(), properties.get(WebFetcher.CONFIG_WAIT_JAVASCRIPT));
+		configValues.put(WebFetcher.CONFIG_URLS.name(), Arrays.asList(((String) properties.get(WebFetcher.PROPERTY_URLS))));
+		configValues.put(WebFetcher.CONFIG_DATA_FOLDER.name(), properties.get(WebFetcher.PROPERTY_DATAFOLDER));
+		configValues.put(WebFetcher.CONFIG_EXCLUDE.name(), Arrays.asList(((String) properties.get(WebFetcher.PROPERTY_EXCLUDE)).split(",")));
 
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);
-		webFetcher.stop();
+		webFetcher.stopped = true;
 
 		TestConsumer testConsumer = new TestConsumer();
 		webFetcher.start(testConsumer);
@@ -47,7 +45,7 @@ public class WebFetcherTest {
 		List<Map<String, Object>> events = testConsumer.getEvents();
 
 		Assert.assertEquals(0, events.size());
-
+		webFetcher.stop();
 	}
 
 	private static class TestConsumer implements Consumer<Map<String, Object>> {
