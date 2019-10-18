@@ -8,6 +8,7 @@ vendor/
 build/
 out/
 .idea
+.gradle/
 .gradle
 *.iml
 *.class
@@ -15,11 +16,14 @@ out/
 *.iws
 *.gem
 *.gemspec
+.settings/
+.project/
 Gemfile*
 settings.gradle
 gradle.properties
 .project
 .classpath
 .settings
-*.gz
 *.zip
+*.class
+test.properties

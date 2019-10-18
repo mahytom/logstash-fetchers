@@ -61,10 +61,13 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.jsoup.Jsoup;
 import org.jsoup.select.Elements;
+import org.openqa.selenium.WebDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.machinepublishers.jbrowserdriver.JBrowserDriver;
+import com.machinepublishers.jbrowserdriver.ProxyConfig;
+import com.machinepublishers.jbrowserdriver.ProxyConfig.Type;
 import com.machinepublishers.jbrowserdriver.Settings;
 import com.machinepublishers.jbrowserdriver.Timezone;
 
@@ -105,6 +108,7 @@ public class WebFetcher implements Input {
 	private static final String METADATA_REFERENCE = "reference";
 	private static final String METADATA_CONTENT = "content";
 	private static final String METADATA_URL = "url";
+	private static final String METADATA_CONTEXT = "context";
 	private static final String METADATA_UUID = "uuid";
 	private static final String METADATA_STATUS = "status";
 	private static final String METADATA_CHILD = "childPages";
@@ -132,6 +136,11 @@ public class WebFetcher implements Input {
 	private Map<String, Long> maxPagesCount = new HashMap<>();
 	private Proxy proxy = null;
 
+	private String proxyHost;
+	private Long proxyPort;
+	private String proxyUser;
+	private String proxyPass;
+
 	/**
 	 * Mandatory constructor
 	 * 
@@ -152,10 +161,10 @@ public class WebFetcher implements Input {
 		this.timeout = config.get(CONFIG_TIMEOUT);
 		this.waitJavascript = config.get(CONFIG_WAIT_JAVASCRIPT);
 
-		String proxyHost = config.get(PROXY_HOST);
-		Long proxyPort = config.get(PROXY_PORT);
-		String proxyUser = config.get(PROXY_USER);
-		String proxyPass = config.get(PROXY_PASS);
+		this.proxyHost = config.get(PROXY_HOST);
+		this.proxyPort = config.get(PROXY_PORT);
+		this.proxyUser = config.get(PROXY_USER);
+		this.proxyPass = config.get(PROXY_PASS);
 
 		if (proxyUser != null && proxyPass != null) {
 
@@ -204,6 +213,7 @@ public class WebFetcher implements Input {
 			}
 
 			HostnameVerifier allHostsValid = new HostnameVerifier() {
+
 				public boolean verify(String hostname, SSLSession session) {
 					return true;
 				}
@@ -230,7 +240,7 @@ public class WebFetcher implements Input {
 					LOGGER.info("Starting fetch for URL: {}", url);
 
 					String id = Base64.getEncoder().encodeToString(url.getBytes());
-					Path indexPath = Paths.get(new StringBuilder(dataFolder).append("/").append(id).append("_index").toString());
+					Path indexPath = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).toString());
 
 					try {
 
@@ -266,11 +276,14 @@ public class WebFetcher implements Input {
 
 					} catch (IOException | InterruptedException e1) {
 						LOGGER.error("Failed to create data directory", e1);
+						Thread.currentThread().interrupt();
+
 					}
+
+					LOGGER.info("Finished processing all url : {}", url);
 
 				});
 
-				LOGGER.info("finished processing all urls");
 				Thread.sleep(30000);
 			}
 
@@ -328,8 +341,6 @@ public class WebFetcher implements Input {
 
 			if (maxPages != 0 && maxPagesCount.get(rootUrl) >= maxPages) {
 				return;
-			} else {
-				maxPagesCount.put(rootUrl, maxPagesCount.get(rootUrl) + 1);
 			}
 
 			urlString = getUrlString(urlStringTmp, rootUrl);
@@ -381,6 +392,7 @@ public class WebFetcher implements Input {
 					metadata.put(METADATA_URL, urlString);
 					metadata.put(METADATA_UUID, uuid);
 					metadata.put(METADATA_STATUS, code);
+					metadata.put(METADATA_CONTEXT, urlString);
 
 					writeDocumentToIndex(directory, metadata);
 				}
@@ -400,6 +412,7 @@ public class WebFetcher implements Input {
 				metadata.put(METADATA_URL, urlString);
 				metadata.put(METADATA_UUID, uuid);
 				metadata.put(METADATA_STATUS, code);
+				metadata.put(METADATA_CONTEXT, urlString);
 
 				writeDocumentToIndex(directory, metadata);
 			}
@@ -431,6 +444,7 @@ public class WebFetcher implements Input {
 		byte[] bytes = IOUtils.toByteArray(inputStream);
 		inputStream.close();
 
+		maxPagesCount.put(rootUrl, maxPagesCount.get(rootUrl) + 1);
 		metadata = parseHtml(urlString, rootUrl, headers, bytes, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC), uuid);
 		consumer.accept(metadata);
 
@@ -509,6 +523,17 @@ public class WebFetcher implements Input {
 				urlString = rootUrl.replace(path, "") + urlString;
 			}
 
+		} else if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
+
+			URL urlRoot = new URL(rootUrl);
+			String path = urlRoot.getPath();
+
+			if (StringUtils.isEmpty(path) || path.equals("/")) {
+
+				urlString = urlRoot + "/" + urlString;
+			} else {
+				urlString = urlRoot.toString().substring(0, urlRoot.toString().lastIndexOf('/') + 1) + urlString;
+			}
 		}
 
 		if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
@@ -519,7 +544,7 @@ public class WebFetcher implements Input {
 			urlString = urlString.substring(0, urlString.indexOf('#'));
 		}
 
-		if (urlString.endsWith("/")) {
+		if (urlString.endsWith("/") && !urlString.equals(rootUrl)) {
 			urlString = urlString.substring(0, urlString.lastIndexOf('/'));
 		}
 
@@ -535,6 +560,7 @@ public class WebFetcher implements Input {
 		metadata.put(METADATA_URL, urlString);
 		metadata.put(METADATA_UUID, uuid);
 		metadata.put(METADATA_STATUS, 200);
+		metadata.put(METADATA_CONTEXT, rootUrl);
 
 		headers.entrySet().stream().filter(entry -> entry.getKey() != null).forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
 
@@ -544,7 +570,25 @@ public class WebFetcher implements Input {
 
 			if (waitJavascript) {
 
-				JBrowserDriver driver = new JBrowserDriver(Settings.builder().timezone(Timezone.EUROPE_BRUSSELS).build());
+				WebDriver driver = null;
+
+				if (proxyUser != null && proxyPass != null) {
+
+					ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser, proxyPass);
+					driver = new JBrowserDriver(Settings.builder().timezone(Timezone.EUROPE_BRUSSELS)
+							.proxy(proxyConfig)
+							.loggerLevel(java.util.logging.Level.INFO)
+							.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=")
+							.hostnameVerification(false).build());
+
+				} else {
+					
+					 driver = new JBrowserDriver(Settings.builder().timezone(Timezone.EUROPE_BRUSSELS)
+	                            .loggerLevel(java.util.logging.Level.INFO)
+	                            .hostnameVerification(false)
+	                            .build());
+				}
+
 				driver.get(urlString);
 				bodyHtml = driver.getPageSource();
 				driver.quit();
@@ -560,7 +604,8 @@ public class WebFetcher implements Input {
 			Elements elements = document.getElementsByAttribute("href");
 			String simpleUrlString = getSimpleUrl(rootUrl);
 
-			List<String> childPages = elements.stream().map(e -> e.attr("href")).filter(href -> href.startsWith("/") || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString)).filter(href -> !href.equals("/") && !href.startsWith("//")).collect(Collectors.toList());
+			List<String> childPages = elements.stream().map(e -> e.attr("href")).filter(href -> (!href.startsWith(HTTP) && !href.startsWith(HTTPS) && !href.startsWith("mailto")) || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
+					.filter(href -> !href.equals("/") && !href.startsWith("//")).collect(Collectors.toList());
 
 			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> (href.startsWith(HTTP) || href.startsWith(HTTPS)) && !href.startsWith(HTTP + simpleUrlString) && !href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
 

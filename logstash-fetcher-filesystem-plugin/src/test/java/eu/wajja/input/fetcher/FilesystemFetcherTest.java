@@ -7,15 +7,26 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.function.Consumer;
 
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 import org.logstash.plugins.ConfigurationImpl;
 
 import co.elastic.logstash.api.Configuration;
 
 public class FilesystemFetcherTest {
+
+	private Properties properties;
+
+	@Before
+	public void intialize() throws IOException {
+
+		properties = new Properties();
+		properties.load(this.getClass().getClassLoader().getResourceAsStream("test.properties"));
+	}
 
 	@Test
 	public void filesystemFetcherTest() throws IOException {
