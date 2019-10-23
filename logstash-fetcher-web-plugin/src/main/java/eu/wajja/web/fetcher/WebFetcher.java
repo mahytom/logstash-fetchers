@@ -11,8 +11,12 @@ import java.net.Proxy;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.CopyOption;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
@@ -314,7 +318,7 @@ public class WebFetcher implements Input {
 
 							Map<String, Object> metadata = new HashMap<>();
 							metadata.put(METADATA_REFERENCE, reference);
-							metadata.put(METADATA_COMMAND, Command.DELETE);
+							metadata.put(METADATA_COMMAND, Command.DELETE.toString());
 
 							consumer.accept(metadata);
 
