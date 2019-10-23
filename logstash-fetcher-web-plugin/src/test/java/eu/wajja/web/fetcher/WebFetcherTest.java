@@ -45,7 +45,7 @@ public class WebFetcherTest {
 		List<Map<String, Object>> events = testConsumer.getEvents();
 
 		Assert.assertEquals(0, events.size());
-		webFetcher.stop();
+//		webFetcher.stop();
 	}
 
 	private static class TestConsumer implements Consumer<Map<String, Object>> {
