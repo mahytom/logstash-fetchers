@@ -34,10 +34,8 @@ public class WebFetcherTest {
 		Map<String, Object> configValues = new HashMap<>();
 		configValues.put(WebFetcher.CONFIG_URLS.name(), Arrays.asList(((String) properties.get(WebFetcher.PROPERTY_URLS))));
 		configValues.put(WebFetcher.CONFIG_DATA_FOLDER.name(), properties.get(WebFetcher.PROPERTY_DATAFOLDER));
-		configValues.put(WebFetcher.CONFIG_EXCLUDE_DATA.name(), Arrays.asList(((String) properties.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, ".css"))
-				.split(",")).stream().map(tt -> tt.substring(1, tt.length() - 1)).collect(Collectors.toList()));
-		configValues.put(WebFetcher.CONFIG_EXCLUDE_LINK.name(), Arrays.asList(((String) properties.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, ".css"))
-				.split(",")).stream().map(tt -> tt.substring(1, tt.length() - 1)).collect(Collectors.toList()));
+		configValues.put(WebFetcher.CONFIG_EXCLUDE_DATA.name(), Arrays.asList(((String) properties.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, ".css")).split(",")).stream().map(tt -> tt.substring(1, tt.length() - 1)).collect(Collectors.toList()));
+		configValues.put(WebFetcher.CONFIG_EXCLUDE_LINK.name(), Arrays.asList(((String) properties.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, ".css")).split(",")).stream().map(tt -> tt.substring(1, tt.length() - 1)).collect(Collectors.toList()));
 		
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);
@@ -49,7 +47,7 @@ public class WebFetcherTest {
 		List<Map<String, Object>> events = testConsumer.getEvents();
 
 		Assert.assertEquals(0, events.size());
-//		webFetcher.stop();
+		webFetcher.stop();
 	}
 
 	private static class TestConsumer implements Consumer<Map<String, Object>> {
