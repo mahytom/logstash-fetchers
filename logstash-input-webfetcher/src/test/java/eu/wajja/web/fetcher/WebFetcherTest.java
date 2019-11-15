@@ -14,6 +14,7 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.logstash.plugins.ConfigurationImpl;
+import org.quartz.SchedulerException;
 
 import co.elastic.logstash.api.Configuration;
 
@@ -29,13 +30,15 @@ public class WebFetcherTest {
 	}
 
 	@Test
-	public void testWebFetcher() {
+	public void testWebFetcher() throws SchedulerException {
 
 		Map<String, Object> configValues = new HashMap<>();
 		configValues.put(WebFetcher.CONFIG_URLS.name(), Arrays.asList(((String) properties.get(WebFetcher.PROPERTY_URLS))));
 		configValues.put(WebFetcher.CONFIG_DATA_FOLDER.name(), properties.get(WebFetcher.PROPERTY_DATAFOLDER));
 		configValues.put(WebFetcher.CONFIG_EXCLUDE_DATA.name(), Arrays.asList(((String) properties.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, ".css")).split(",")).stream().map(tt -> tt.substring(1, tt.length() - 1)).collect(Collectors.toList()));
 		configValues.put(WebFetcher.CONFIG_EXCLUDE_LINK.name(), Arrays.asList(((String) properties.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, ".css")).split(",")).stream().map(tt -> tt.substring(1, tt.length() - 1)).collect(Collectors.toList()));
+		configValues.put(WebFetcher.CONFIG_CRON.name(), "0 0 9 ? * SAT");
+		
 		
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);
