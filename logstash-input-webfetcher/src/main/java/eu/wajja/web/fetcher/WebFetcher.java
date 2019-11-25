@@ -73,6 +73,7 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<String> CONFIG_PROXY_USER = PluginConfigSpec.stringSetting(PROPERTY_PROXY_USER);
 	public static final PluginConfigSpec<String> CONFIG_PROXY_PASS = PluginConfigSpec.stringSetting(PROPERTY_PROXY_PASS);
 	public static final PluginConfigSpec<String> CONFIG_CRON = PluginConfigSpec.stringSetting(PROPERTY_CRON);
+	public static final PluginConfigSpec<Long> CONFIG_THREADS = PluginConfigSpec.numSetting(PROPERTY_THREADS, 1l);
 
 	private final CountDownLatch done = new CountDownLatch(1);
 	protected volatile boolean stopped;
@@ -103,7 +104,8 @@ public class WebFetcher implements Input {
 		jobDataMap.put(PROPERTY_MAX_PAGES, config.get(CONFIG_MAX_PAGES));
 		jobDataMap.put(PROPERTY_TIMEOUT, config.get(CONFIG_TIMEOUT));
 		jobDataMap.put(PROPERTY_JAVASCRIPT, config.get(CONFIG_WAIT_JAVASCRIPT));
-
+		jobDataMap.put(PROPERTY_THREADS, config.get(CONFIG_THREADS));
+		
 		jobDataMap.put(PROPERTY_PROXY_HOST, config.get(CONFIG_PROXY_HOST));
 		jobDataMap.put(PROPERTY_PROXY_PORT, config.get(CONFIG_PROXY_PORT));
 		jobDataMap.put(PROPERTY_PROXY_USER, config.get(CONFIG_PROXY_USER));
@@ -188,7 +190,8 @@ public class WebFetcher implements Input {
 				CONFIG_TIMEOUT,
 				CONFIG_MAX_PAGES,
 				CONFIG_WAIT_JAVASCRIPT,
-				CONFIG_CRON);
+				CONFIG_CRON,
+				CONFIG_THREADS);
 	}
 
 	@Override

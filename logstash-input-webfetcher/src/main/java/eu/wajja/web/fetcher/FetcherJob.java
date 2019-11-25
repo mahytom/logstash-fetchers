@@ -27,6 +27,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -108,6 +110,7 @@ public class FetcherJob implements Job {
 	private Map<String, Long> maxPagesCount = new HashMap<>();
 	private Proxy proxy = null;
 	private WebDriver driver;
+	private ThreadPoolExecutor executorService;
 
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
@@ -115,14 +118,15 @@ public class FetcherJob implements Job {
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
 		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
 		String url = dataMap.getString(WebFetcher.PROPERTY_URL);
+
 		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
 
 		this.maxDepth = dataMap.getLong(WebFetcher.PROPERTY_MAX_DEPTH);
 		this.maxPages = dataMap.getLong(WebFetcher.PROPERTY_MAX_PAGES);
 		this.timeout = dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT);
 		this.waitJavascript = dataMap.getBoolean(WebFetcher.PROPERTY_JAVASCRIPT);
-		this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
-		this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.CONFIG_EXCLUDE_LINK);
+		this.excludedDataRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, new ArrayList<>());
+		this.excludedLinkRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, new ArrayList<>());
 
 		initializeConnection(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
 				dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
@@ -131,6 +135,9 @@ public class FetcherJob implements Job {
 				dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
 
 		Long startTime = LocalDateTime.now().toEpochSecond(ZoneOffset.UTC);
+
+		Long threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
+		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
 
 		LOGGER.info("Starting fetch for URL: {}", url);
 
@@ -162,6 +169,11 @@ public class FetcherJob implements Job {
 			maxPagesCount.put(url, 0l);
 			extractUrl(directory, consumer, url, url, 0l, startTime);
 
+			while (executorService.getActiveCount() > 0) {
+				LOGGER.info("Thread count is : {}", executorService.getActiveCount());
+				Thread.sleep(5000);
+			}
+
 			List<String> documentsToDelete = getDocumentsToDelete(startTime, directory);
 
 			documentsToDelete.stream().forEach(reference -> {
@@ -180,7 +192,7 @@ public class FetcherJob implements Job {
 				deleteDocumentToIndex(directory, documentsToDelete);
 			}
 
-		} catch (IOException e1) {
+		} catch (IOException | InterruptedException e1) {
 			LOGGER.error("Failed to create data directory", e1);
 			Thread.currentThread().interrupt();
 
@@ -192,6 +204,7 @@ public class FetcherJob implements Job {
 		}
 
 		LOGGER.info("Finished processing all url : {}", url);
+
 	}
 
 	private void initializeConnection(String proxyUser, String proxyPass, String proxyHost, Long proxyPort, Boolean disableSSLcheck) {
@@ -397,7 +410,7 @@ public class FetcherJob implements Job {
 
 			} else {
 
-				LOGGER.error("Failed to read url, status {}, {}, {}", code, url, message);
+				LOGGER.warn("Failed to read url, status {}, {}, {}", code, url, message);
 
 				metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(urlString.getBytes()));
 				metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
@@ -442,7 +455,7 @@ public class FetcherJob implements Job {
 
 		} catch (Exception e1) {
 
-			LOGGER.error("Failed to read url, status {}, {}, {}", code, url, message, e1);
+			LOGGER.warn("Failed to read url, status {}, {}, {}", code, url, message, e1);
 
 			metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(urlString.getBytes()));
 			metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
@@ -454,7 +467,7 @@ public class FetcherJob implements Job {
 			writeDocumentToIndex(directory, metadata);
 		}
 
-		Optional.ofNullable(childPages).orElse(new ArrayList<>()).stream().forEach(childUrl -> extractUrl(directory, consumer, childUrl, rootUrl, depth + 1, startTime));
+		Optional.ofNullable(childPages).orElse(new ArrayList<>()).stream().forEach(childUrl -> executorService.execute(() -> extractUrl(directory, consumer, childUrl, rootUrl, depth + 1, startTime)));
 
 	}
 
@@ -462,15 +475,14 @@ public class FetcherJob implements Job {
 	private List<String> extractContent(Directory directory, Consumer<Map<String, Object>> consumer, String rootUrl, String urlString, String uuid, URL url, int code, String message, Map<String, List<String>> headers, Long depth, byte[] bytes) throws IOException {
 
 		Map<String, Object> metadata = parseHtml(urlString, rootUrl, headers, bytes, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC), uuid);
+		writeDocumentToIndex(directory, metadata);
 
 		if (excludedDataRegex.stream().noneMatch(ex -> urlString.matches(ex))) {
 
 			maxPagesCount.put(rootUrl, maxPagesCount.get(rootUrl) + 1);
-
 			consumer.accept(metadata);
 			LOGGER.info("Read url, status {}, {}, {}, depth {}, pages {}", code, url, message, depth, maxPagesCount.get(rootUrl));
 
-			writeDocumentToIndex(directory, metadata);
 		} else {
 			LOGGER.info("Excluded url, status {}, {}, {}, depth {}, pages {}", code, url, message, depth, maxPagesCount.get(rootUrl));
 		}
@@ -642,7 +654,7 @@ public class FetcherJob implements Job {
 			List<String> childPages = elements.stream().map(e -> e.attr("href"))
 					.filter(href -> (!href.startsWith(HTTP) && !href.startsWith(HTTPS) && !href.startsWith("mailto") && !href.startsWith("javascript") && !href.endsWith(".css") && !href.endsWith(".js")) || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
 					.filter(href -> !href.equals("/") && !href.startsWith("//"))
-					.filter(href -> excludedDataRegex.stream().noneMatch(ex -> href.matches(ex)))
+					.filter(href -> excludedLinkRegex.stream().noneMatch(ex -> href.matches(ex)))
 					.sorted()
 					.collect(Collectors.toList());
 
@@ -658,13 +670,33 @@ public class FetcherJob implements Job {
 
 	private String getSimpleUrl(String urlString) {
 
-		String simpleUrlString = urlString.replace(HTTP, "").replace(HTTPS, "");
+		try {
 
-		if (simpleUrlString.contains("?")) {
-			return simpleUrlString.substring(0, simpleUrlString.indexOf('?'));
+			URL url = new URL(urlString);
+
+			StringBuilder stringBuilder = new StringBuilder();
+			stringBuilder.append(url.getHost());
+
+			if (url.getPort() > 0) {
+				stringBuilder.append(url.getPort());
+			}
+
+			String path = url.getPath();
+			if (path.startsWith("/") && path.length() > 2) {
+				path = path.substring(1, path.length());
+			}
+
+			if (path.split("/").length > 1) {
+				stringBuilder.append("/").append(path.substring(0, path.indexOf('/')));
+			}
+
+			return stringBuilder.toString();
+
+		} catch (MalformedURLException e) {
+			e.printStackTrace();
 		}
 
-		return simpleUrlString;
+		return urlString;
 	}
 
 }
