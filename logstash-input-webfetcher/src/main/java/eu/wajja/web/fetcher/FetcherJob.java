@@ -170,7 +170,7 @@ public class FetcherJob implements Job {
 			extractUrl(directory, consumer, url, url, 0l, startTime);
 
 			while (executorService.getActiveCount() > 0) {
-				LOGGER.info("Thread count is : {}", executorService.getActiveCount());
+				LOGGER.debug("Thread count is : {}", executorService.getActiveCount());
 				Thread.sleep(5000);
 			}
 
