@@ -61,7 +61,10 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.jsoup.Jsoup;
 import org.jsoup.select.Elements;
+import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.chrome.ChromeOptions;
 import org.quartz.DisallowConcurrentExecution;
 import org.quartz.Job;
 import org.quartz.JobDataMap;
@@ -106,6 +109,7 @@ public class FetcherJob implements Job {
 	private Boolean waitJavascript;
 	private List<String> excludedDataRegex;
 	private List<String> excludedLinkRegex;
+	private String chromeDriver;
 
 	private Map<String, Long> maxPagesCount = new HashMap<>();
 	private Proxy proxy = null;
@@ -124,6 +128,7 @@ public class FetcherJob implements Job {
 		this.maxDepth = dataMap.getLong(WebFetcher.PROPERTY_MAX_DEPTH);
 		this.maxPages = dataMap.getLong(WebFetcher.PROPERTY_MAX_PAGES);
 		this.timeout = dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT);
+		this.chromeDriver = dataMap.getString(WebFetcher.PROPERTY_CHROME_DRIVER);
 		this.waitJavascript = dataMap.getBoolean(WebFetcher.PROPERTY_JAVASCRIPT);
 		this.excludedDataRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, new ArrayList<>());
 		this.excludedLinkRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, new ArrayList<>());
@@ -191,7 +196,7 @@ public class FetcherJob implements Job {
 				LOGGER.debug("Thread count is : {}", executorService.getActiveCount());
 				Thread.sleep(5000);
 			}
-			
+
 		} catch (IOException | InterruptedException e1) {
 			LOGGER.error("Failed to create data directory", e1);
 			Thread.currentThread().interrupt();
@@ -266,25 +271,47 @@ public class FetcherJob implements Job {
 
 		if (this.waitJavascript) {
 
-			Builder settings = Settings.builder().timezone(Timezone.EUROPE_BRUSSELS)
-					.connectTimeout(this.timeout.intValue())
-					.maxConnections(50)
-					.quickRender(true)
-					.blockMedia(true)
-					.userAgent(UserAgent.CHROME)
-					.logger("ch.qos.logback.core.ConsoleAppender")
-					.processes(2)
-					.loggerLevel(java.util.logging.Level.INFO)
-					.hostnameVerification(false);
+			if (StringUtils.isEmpty(chromeDriver)) {
 
-			if (proxyUser != null && proxyPass != null && proxyPort != null) {
+				Builder settings = Settings.builder().timezone(Timezone.EUROPE_BRUSSELS)
+						.connectTimeout(this.timeout.intValue())
+						.maxConnections(50)
+						.quickRender(true)
+						.blockMedia(true)
+						.userAgent(UserAgent.CHROME)
+						.logger("ch.qos.logback.core.ConsoleAppender")
+						.processes(2)
+						.loggerLevel(java.util.logging.Level.INFO)
+						.hostnameVerification(false);
 
-				ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser, proxyPass);
-				settings.proxy(proxyConfig);
-				settings.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=");
+				if (proxyUser != null && proxyPass != null && proxyPort != null) {
+
+					ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser, proxyPass);
+					settings.proxy(proxyConfig);
+					settings.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=");
+				}
+
+				driver = new JBrowserDriver(settings.build());
+
+			} else {
+
+				Path chrome = Paths.get(chromeDriver);
+				chrome.toFile().setExecutable(true);
+				
+				System.setProperty("webdriver.chrome.driver", chrome.toAbsolutePath().toString());
+
+				ChromeOptions chromeOptions = new ChromeOptions();
+				chromeOptions.addArguments("--headless");
+				chromeOptions.addArguments("--no-sandbox");
+				chromeOptions.addArguments("--disable-dev-shm-usage");
+				
+				driver = new ChromeDriver(chromeOptions);
+
+				// https://github.com/seleniumhq/selenium-google-code-issue-archive/issues/27
+				((JavascriptExecutor) driver).executeScript("window.alert = function(msg) { }");
+				((JavascriptExecutor) driver).executeScript("window.confirm = function(msg) { }");
+
 			}
-
-			driver = new JBrowserDriver(settings.build());
 
 		}
 	}

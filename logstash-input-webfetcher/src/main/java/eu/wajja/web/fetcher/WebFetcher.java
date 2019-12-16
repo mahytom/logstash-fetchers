@@ -55,6 +55,7 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_PROXY_PASS = "proxyPass";
 	protected static final String PROPERTY_CRON = "cron";
 	protected static final String PROPERTY_CONSUMER = "consumer";
+	protected static final String PROPERTY_CHROME_DRIVER = "chromeDriver";
 
 	public static final String GROUP_NAME = "group001";
 
@@ -74,6 +75,7 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<String> CONFIG_PROXY_PASS = PluginConfigSpec.stringSetting(PROPERTY_PROXY_PASS);
 	public static final PluginConfigSpec<String> CONFIG_CRON = PluginConfigSpec.stringSetting(PROPERTY_CRON);
 	public static final PluginConfigSpec<Long> CONFIG_THREADS = PluginConfigSpec.numSetting(PROPERTY_THREADS, 1l);
+	public static final PluginConfigSpec<String> CONFIG_CHROME_DRIVER = PluginConfigSpec.stringSetting(PROPERTY_CHROME_DRIVER, null, false, false);
 
 	private final CountDownLatch done = new CountDownLatch(1);
 	protected volatile boolean stopped;
@@ -105,7 +107,8 @@ public class WebFetcher implements Input {
 		jobDataMap.put(PROPERTY_TIMEOUT, config.get(CONFIG_TIMEOUT));
 		jobDataMap.put(PROPERTY_JAVASCRIPT, config.get(CONFIG_WAIT_JAVASCRIPT));
 		jobDataMap.put(PROPERTY_THREADS, config.get(CONFIG_THREADS));
-		
+		jobDataMap.put(PROPERTY_CHROME_DRIVER, config.get(CONFIG_CHROME_DRIVER));
+
 		jobDataMap.put(PROPERTY_PROXY_HOST, config.get(CONFIG_PROXY_HOST));
 		jobDataMap.put(PROPERTY_PROXY_PORT, config.get(CONFIG_PROXY_PORT));
 		jobDataMap.put(PROPERTY_PROXY_USER, config.get(CONFIG_PROXY_USER));
@@ -191,7 +194,8 @@ public class WebFetcher implements Input {
 				CONFIG_MAX_PAGES,
 				CONFIG_WAIT_JAVASCRIPT,
 				CONFIG_CRON,
-				CONFIG_THREADS);
+				CONFIG_THREADS,
+				CONFIG_CHROME_DRIVER);
 	}
 
 	@Override
