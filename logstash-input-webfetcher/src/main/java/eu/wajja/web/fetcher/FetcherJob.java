@@ -169,11 +169,6 @@ public class FetcherJob implements Job {
 			maxPagesCount.put(url, 0l);
 			extractUrl(directory, consumer, url, url, 0l, startTime);
 
-			while (executorService.getActiveCount() > 0) {
-				LOGGER.debug("Thread count is : {}", executorService.getActiveCount());
-				Thread.sleep(5000);
-			}
-
 			List<String> documentsToDelete = getDocumentsToDelete(startTime, directory);
 
 			documentsToDelete.stream().forEach(reference -> {
@@ -192,6 +187,11 @@ public class FetcherJob implements Job {
 				deleteDocumentToIndex(directory, documentsToDelete);
 			}
 
+			while (executorService.getActiveCount() > 0) {
+				LOGGER.debug("Thread count is : {}", executorService.getActiveCount());
+				Thread.sleep(5000);
+			}
+			
 		} catch (IOException | InterruptedException e1) {
 			LOGGER.error("Failed to create data directory", e1);
 			Thread.currentThread().interrupt();
