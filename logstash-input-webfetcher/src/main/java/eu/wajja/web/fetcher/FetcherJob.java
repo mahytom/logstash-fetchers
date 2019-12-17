@@ -174,23 +174,7 @@ public class FetcherJob implements Job {
 			maxPagesCount.put(url, 0l);
 			extractUrl(directory, consumer, url, url, 0l, startTime);
 
-			List<String> documentsToDelete = getDocumentsToDelete(startTime, directory);
-
-			documentsToDelete.stream().forEach(reference -> {
-
-				LOGGER.info("Sending {} for deletion", reference);
-
-				Map<String, Object> metadata = new HashMap<>();
-				metadata.put(METADATA_REFERENCE, reference);
-				metadata.put(METADATA_COMMAND, Command.DELETE.toString());
-
-				consumer.accept(metadata);
-
-			});
-
-			if (!documentsToDelete.isEmpty()) {
-				deleteDocumentToIndex(directory, documentsToDelete);
-			}
+			deleteOldDocuments(startTime, directory, consumer);
 
 			while (executorService.getActiveCount() > 0) {
 				LOGGER.debug("Thread count is : {}", executorService.getActiveCount());
@@ -296,15 +280,19 @@ public class FetcherJob implements Job {
 			} else {
 
 				Path chrome = Paths.get(chromeDriver);
-				chrome.toFile().setExecutable(true);
-				
+				Boolean isExecutable = chrome.toFile().setExecutable(true);
+
+				if (isExecutable) {
+					LOGGER.info("set {} to be executable", chromeDriver);
+				}
+
 				System.setProperty("webdriver.chrome.driver", chrome.toAbsolutePath().toString());
 
 				ChromeOptions chromeOptions = new ChromeOptions();
 				chromeOptions.addArguments("--headless");
 				chromeOptions.addArguments("--no-sandbox");
 				chromeOptions.addArguments("--disable-dev-shm-usage");
-				
+
 				driver = new ChromeDriver(chromeOptions);
 
 				// https://github.com/seleniumhq/selenium-google-code-issue-archive/issues/27
@@ -316,15 +304,15 @@ public class FetcherJob implements Job {
 		}
 	}
 
-	private List<String> getDocumentsToDelete(Long startTime, Directory directory) throws IOException {
+	private void deleteOldDocuments(Long startTime, Directory directory, Consumer<Map<String, Object>> consumer) throws IOException {
 
 		try (IndexReader indexReader = DirectoryReader.open(directory)) {
 
 			IndexSearcher isearcher = new IndexSearcher(indexReader);
-			Query query = LongPoint.newRangeQuery(METADATA_EPOCH + "_RANGE_QUERY", Long.MIN_VALUE, startTime);
+			Query query = LongPoint.newRangeQuery(METADATA_EPOCH + "_RANGE_QUERY", Long.MIN_VALUE, startTime - 1l);
 			TopDocs topDocs = isearcher.search(query, 1000);
 
-			return Arrays.asList(topDocs.scoreDocs).stream().map(tdoc -> {
+			Arrays.asList(topDocs.scoreDocs).stream().forEach(tdoc -> {
 
 				try {
 
@@ -332,17 +320,31 @@ public class FetcherJob implements Job {
 					IndexableField indexableField = document.getFields().stream().filter(e -> e.name().equals(METADATA_REFERENCE)).findFirst().orElse(null);
 
 					if (indexableField != null) {
-						return indexableField.stringValue();
+
+						String reference = indexableField.stringValue();
+
+						LOGGER.info("Sending {} for deletion", reference);
+
+						Map<String, Object> metadata = new HashMap<>();
+						metadata.put(METADATA_REFERENCE, reference);
+						metadata.put(METADATA_COMMAND, Command.DELETE.toString());
+
+						consumer.accept(metadata);
 					}
 
 				} catch (IOException e) {
 					LOGGER.error("Failed to send document for deletion", e);
 				}
 
-				return tdoc.doc + "";
+			});
 
-			}).collect(Collectors.toList());
+			IndexWriterConfig indexWriterConfig = new IndexWriterConfig(standardAnalyzer);
 
+			try (IndexWriter iwriter = new IndexWriter(directory, indexWriterConfig)) {
+				iwriter.deleteDocuments(query);
+			} catch (StackOverflowError | Exception e1) {
+				LOGGER.error("Failed to write document to index", e1);
+			}
 		}
 
 	}
@@ -575,23 +577,6 @@ public class FetcherJob implements Job {
 
 			iwriter.flush();
 			iwriter.commit();
-
-		} catch (StackOverflowError | Exception e1) {
-			LOGGER.error("Failed to write document to index", e1);
-		}
-
-	}
-
-	private synchronized void deleteDocumentToIndex(Directory directory, List<String> references) throws IOException {
-
-		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(standardAnalyzer);
-
-		try (IndexWriter iwriter = new IndexWriter(directory, indexWriterConfig)) {
-
-			for (String reference : references) {
-				Query query = new TermQuery(new Term(METADATA_REFERENCE, reference));
-				iwriter.deleteDocuments(query);
-			}
 
 		} catch (StackOverflowError | Exception e1) {
 			LOGGER.error("Failed to write document to index", e1);
