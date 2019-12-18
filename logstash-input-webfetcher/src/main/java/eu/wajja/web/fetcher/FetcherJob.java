@@ -11,6 +11,7 @@ import java.net.Proxy;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.KeyManagementException;
@@ -41,24 +42,6 @@ import javax.net.ssl.X509TrustManager;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field.Store;
-import org.apache.lucene.document.LongPoint;
-import org.apache.lucene.document.StringField;
-import org.apache.lucene.index.DirectoryReader;
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.IndexWriterConfig;
-import org.apache.lucene.index.IndexableField;
-import org.apache.lucene.index.Term;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.TermQuery;
-import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSDirectory;
 import org.jsoup.Jsoup;
 import org.jsoup.select.Elements;
 import org.openqa.selenium.JavascriptExecutor;
@@ -73,6 +56,7 @@ import org.quartz.JobExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.machinepublishers.jbrowserdriver.JBrowserDriver;
 import com.machinepublishers.jbrowserdriver.ProxyConfig;
 import com.machinepublishers.jbrowserdriver.ProxyConfig.Type;
@@ -101,7 +85,7 @@ public class FetcherJob implements Job {
 	private static final String HTTPS = "https://";
 	private static final String ROBOT = "robot.txt";
 
-	private StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
+	private ObjectMapper objectMapper = new ObjectMapper();
 
 	private Long maxDepth;
 	private Long maxPages;
@@ -110,11 +94,13 @@ public class FetcherJob implements Job {
 	private List<String> excludedDataRegex;
 	private List<String> excludedLinkRegex;
 	private String chromeDriver;
-
-	private Map<String, Long> maxPagesCount = new HashMap<>();
+	private Long maxPagesCount = 0l;
 	private Proxy proxy = null;
 	private WebDriver driver;
 	private ThreadPoolExecutor executorService;
+	private String threadId;
+
+	private List<String> tmpList = new ArrayList<>();
 
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
@@ -129,6 +115,7 @@ public class FetcherJob implements Job {
 		this.maxPages = dataMap.getLong(WebFetcher.PROPERTY_MAX_PAGES);
 		this.timeout = dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT);
 		this.chromeDriver = dataMap.getString(WebFetcher.PROPERTY_CHROME_DRIVER);
+		this.threadId = dataMap.getString(WebFetcher.PROPERTY_THREAD_ID);
 		this.waitJavascript = dataMap.getBoolean(WebFetcher.PROPERTY_JAVASCRIPT);
 		this.excludedDataRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, new ArrayList<>());
 		this.excludedLinkRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, new ArrayList<>());
@@ -139,51 +126,36 @@ public class FetcherJob implements Job {
 				dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
 				dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
 
-		Long startTime = LocalDateTime.now().toEpochSecond(ZoneOffset.UTC);
-
 		Long threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
 		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
 
-		LOGGER.info("Starting fetch for URL: {}", url);
+		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, url);
 
 		String id = Base64.getEncoder().encodeToString(url.getBytes());
-		Path indexPath = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).toString());
 
-		try (Directory directory = FSDirectory.open(indexPath)) {
+		try {
 
 			URL robotUrl = new URL(url + "/" + ROBOT);
 			HttpURLConnection urlConnection = getHttpConnection(robotUrl);
-
 			int code = urlConnection.getResponseCode();
 			String message = urlConnection.getResponseMessage();
 
 			if (code == HttpURLConnection.HTTP_OK) {
-				extractRobot(robotUrl.toString(), directory, urlConnection, code, message);
-
+				extractRobot(robotUrl.toString(), urlConnection, code, message);
 			} else {
-
 				LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", code, url, message);
-
-				Map<String, Object> metadata = new HashMap<>();
-				metadata.put(METADATA_REFERENCE, ROBOT);
-				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(ROBOT.getBytes()));
-
-				writeDocumentToIndex(directory, metadata);
 			}
 
-			maxPagesCount.put(url, 0l);
-			extractUrl(directory, consumer, url, url, 0l, startTime);
-
-			deleteOldDocuments(startTime, directory, consumer);
+			extractUrl(consumer, url, url, 0l);
+			deleteOldDocuments(consumer, dataFolder, id);
 
 			while (executorService.getActiveCount() > 0) {
 				LOGGER.debug("Thread count is : {}", executorService.getActiveCount());
 				Thread.sleep(5000);
 			}
 
-		} catch (IOException | InterruptedException e1) {
-			LOGGER.error("Failed to create data directory", e1);
-			Thread.currentThread().interrupt();
+		} catch (Exception e) {
+			LOGGER.error("Failed to read robot", e);
 
 		}
 
@@ -192,7 +164,7 @@ public class FetcherJob implements Job {
 			this.driver.quit();
 		}
 
-		LOGGER.info("Finished processing all url : {}", url);
+		LOGGER.info("Finished Thread {}", threadId);
 
 	}
 
@@ -304,47 +276,49 @@ public class FetcherJob implements Job {
 		}
 	}
 
-	private void deleteOldDocuments(Long startTime, Directory directory, Consumer<Map<String, Object>> consumer) throws IOException {
+	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String dataFolder, String id) {
 
-		try (IndexReader indexReader = DirectoryReader.open(directory)) {
+		Path indexPath = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).toString());
 
-			IndexSearcher isearcher = new IndexSearcher(indexReader);
-			Query query = LongPoint.newRangeQuery(METADATA_EPOCH + "_RANGE_QUERY", Long.MIN_VALUE, startTime - 1l);
-			TopDocs topDocs = isearcher.search(query, 1000);
+		if (!indexPath.toFile().exists()) {
+			indexPath.toFile().mkdirs();
+		}
 
-			Arrays.asList(topDocs.scoreDocs).stream().forEach(tdoc -> {
+		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_tmp.txt").toString());
 
-				try {
+		if (pathFile.toFile().exists()) {
 
-					Document document = isearcher.doc(tdoc.doc);
-					IndexableField indexableField = document.getFields().stream().filter(e -> e.name().equals(METADATA_REFERENCE)).findFirst().orElse(null);
+			try {
+				List<String> legacyFile = Arrays.asList(objectMapper.readValue(pathFile.toFile(), String[].class));
+				List<String> urlsForDeletion = legacyFile.stream().filter(l -> !tmpList.contains(l)).collect(Collectors.toList());
 
-					if (indexableField != null) {
+				LOGGER.info("Thread deleting {}, deleting {} urls", threadId, urlsForDeletion.size());
 
-						String reference = indexableField.stringValue();
+				urlsForDeletion.parallelStream().forEach(url -> {
 
-						LOGGER.info("Sending {} for deletion", reference);
+					String reference = Base64.getEncoder().encodeToString(url.getBytes());
+					LOGGER.info("Thread Sending Deletion {} , reference {}", threadId, reference);
 
-						Map<String, Object> metadata = new HashMap<>();
-						metadata.put(METADATA_REFERENCE, reference);
-						metadata.put(METADATA_COMMAND, Command.DELETE.toString());
+					Map<String, Object> metadata = new HashMap<>();
+					metadata.put(METADATA_REFERENCE, reference);
+					metadata.put(METADATA_COMMAND, Command.DELETE.toString());
 
-						consumer.accept(metadata);
-					}
+					consumer.accept(metadata);
 
-				} catch (IOException e) {
-					LOGGER.error("Failed to send document for deletion", e);
-				}
+				});
 
-			});
+				Files.delete(pathFile);
 
-			IndexWriterConfig indexWriterConfig = new IndexWriterConfig(standardAnalyzer);
-
-			try (IndexWriter iwriter = new IndexWriter(directory, indexWriterConfig)) {
-				iwriter.deleteDocuments(query);
-			} catch (StackOverflowError | Exception e1) {
-				LOGGER.error("Failed to write document to index", e1);
+			} catch (IOException e) {
+				LOGGER.warn("Failed to read legacy file", e);
 			}
+		}
+
+		try {
+			String json = objectMapper.writeValueAsString(tmpList);
+			Files.write(pathFile, json.getBytes());
+		} catch (IOException e) {
+			LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);
 		}
 
 	}
@@ -368,7 +342,7 @@ public class FetcherJob implements Job {
 		return httpURLConnection;
 	}
 
-	private void extractRobot(String url, Directory directory, HttpURLConnection urlConnection, int code, String message) {
+	private void extractRobot(String url, HttpURLConnection urlConnection, int code, String message) {
 
 		try (InputStream inputStream = urlConnection.getInputStream()) {
 
@@ -381,36 +355,28 @@ public class FetcherJob implements Job {
 			metadata.put(METADATA_REFERENCE, ROBOT);
 			metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(content));
 
-			writeDocumentToIndex(directory, metadata);
-
 		} catch (Exception e) {
 			LOGGER.error("Failed to extract robot.txt from root context", e);
 		}
 	}
 
-	private void extractUrl(Directory directory, Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth, Long startTime) {
+	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth) {
 
 		String urlString = urlStringTmp;
 
 		try {
 
-			if (maxPages != 0 && maxPagesCount.get(rootUrl) >= maxPages) {
+			if (maxPages != 0 && maxPagesCount >= maxPages) {
 				return;
 			}
 
 			urlString = getUrlString(urlStringTmp, rootUrl);
 			String uuid = UUID.randomUUID().toString();
 
-			Document document = getDocument(directory, urlString);
-
-			if (document != null) {
-
-				Long epochValue = Long.decode(document.getField(METADATA_EPOCH).stringValue());
-				if (epochValue != null && epochValue > startTime) {
-					return;
-				}
-
-				uuid = document.get("uuid");
+			if (tmpList.contains(urlString)) {
+				return;
+			} else {
+				tmpList.add(urlString);
 			}
 
 			Map<String, Object> metadata = new HashMap<>();
@@ -424,7 +390,7 @@ public class FetcherJob implements Job {
 
 			if (code == HttpURLConnection.HTTP_OK) {
 
-				parseContent(directory, consumer, rootUrl, depth, startTime, urlString, uuid, metadata, url, urlConnection, code, message);
+				parseContent(consumer, rootUrl, depth, urlString, uuid, metadata, url, urlConnection, code, message);
 
 			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_SEE_OTHER) {
 
@@ -434,45 +400,35 @@ public class FetcherJob implements Job {
 					LOGGER.debug("Not redirecting to external url  {}", newUrl);
 				} else {
 					LOGGER.debug("Redirect needed to :  {}", newUrl);
-					extractUrl(directory, consumer, newUrl, rootUrl, depth, startTime);
+					extractUrl(consumer, newUrl, rootUrl, depth);
 				}
 
 			} else {
-
-				LOGGER.warn("Failed to read url, status {}, {}, {}", code, url, message);
-
-				metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(urlString.getBytes()));
-				metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
-				metadata.put(METADATA_URL, urlString);
-				metadata.put(METADATA_UUID, uuid);
-				metadata.put(METADATA_STATUS, code);
-				metadata.put(METADATA_CONTEXT, urlString);
-
-				writeDocumentToIndex(directory, metadata);
+				LOGGER.warn("Failed To Read Thread {}, status {}, pages {}, depth {}, url {}, message {}", threadId, code, maxPagesCount, depth, url, message);
 			}
 
 			urlConnection.disconnect();
 
 		} catch (SocketTimeoutException e) {
 
-			LOGGER.warn("Url {} timeout, sleeping and trying again", urlString);
+			LOGGER.warn("Thread Timeout {}, url {}, sleeping and trying again", threadId, urlString);
 
 			try {
 
 				Thread.sleep(3000);
-				extractUrl(directory, consumer, urlString, rootUrl, depth, startTime);
+				extractUrl(consumer, urlString, rootUrl, depth);
 
 			} catch (InterruptedException e1) {
 				Thread.currentThread().interrupt();
 			}
 
 		} catch (Exception e) {
-			LOGGER.error("Failed to retrieve URL: {}", urlString, e);
+			LOGGER.error("Failed to retrieve URL from thread {}, url {}", threadId, urlString, e);
 		}
 
 	}
 
-	private void parseContent(Directory directory, Consumer<Map<String, Object>> consumer, String rootUrl, Long depth, Long startTime, String urlString, String uuid, Map<String, Object> metadata, URL url, HttpURLConnection urlConnection, int code, String message) throws IOException {
+	private void parseContent(Consumer<Map<String, Object>> consumer, String rootUrl, Long depth, String urlString, String uuid, Map<String, Object> metadata, URL url, HttpURLConnection urlConnection, int code, String message) throws IOException {
 
 		Map<String, List<String>> headers = urlConnection.getHeaderFields();
 		List<String> childPages = new ArrayList<>();
@@ -480,40 +436,31 @@ public class FetcherJob implements Job {
 		try (InputStream inputStream = urlConnection.getInputStream()) {
 
 			byte[] bytes = IOUtils.toByteArray(inputStream);
-			childPages = extractContent(directory, consumer, rootUrl, urlString, uuid, url, code, message, headers, depth, bytes);
+			childPages = extractContent(consumer, rootUrl, urlString, uuid, url, code, message, headers, depth, bytes);
 
 		} catch (Exception e1) {
 
-			LOGGER.warn("Failed to read url, status {}, {}, {}", code, url, message, e1);
+			LOGGER.warn("Failed Thread {}, status {}, pages {}, depth {}, url {}, message {}", threadId, code, maxPagesCount, depth, url, message, e1);
 
-			metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(urlString.getBytes()));
-			metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
-			metadata.put(METADATA_URL, urlString);
-			metadata.put(METADATA_UUID, uuid);
-			metadata.put(METADATA_STATUS, code);
-			metadata.put(METADATA_CONTEXT, urlString);
-
-			writeDocumentToIndex(directory, metadata);
 		}
 
-		Optional.ofNullable(childPages).orElse(new ArrayList<>()).stream().forEach(childUrl -> executorService.execute(() -> extractUrl(directory, consumer, childUrl, rootUrl, depth + 1, startTime)));
+		Optional.ofNullable(childPages).orElse(new ArrayList<>()).stream().forEach(childUrl -> executorService.execute(() -> extractUrl(consumer, childUrl, rootUrl, depth + 1)));
 
 	}
 
 	@SuppressWarnings("unchecked")
-	private List<String> extractContent(Directory directory, Consumer<Map<String, Object>> consumer, String rootUrl, String urlString, String uuid, URL url, int code, String message, Map<String, List<String>> headers, Long depth, byte[] bytes) throws IOException {
+	private List<String> extractContent(Consumer<Map<String, Object>> consumer, String rootUrl, String urlString, String uuid, URL url, int code, String message, Map<String, List<String>> headers, Long depth, byte[] bytes) throws IOException {
 
 		Map<String, Object> metadata = parseHtml(urlString, rootUrl, headers, bytes, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC), uuid);
-		writeDocumentToIndex(directory, metadata);
 
 		if (excludedDataRegex.stream().noneMatch(ex -> urlString.matches(ex))) {
 
-			maxPagesCount.put(rootUrl, maxPagesCount.get(rootUrl) + 1);
+			maxPagesCount++;
 			consumer.accept(metadata);
-			LOGGER.info("Read url, status {}, {}, {}, depth {}, pages {}", code, url, message, depth, maxPagesCount.get(rootUrl));
+			LOGGER.info("Thread {}, status {}, pages {}, depth {}, url {}, message {}", threadId, code, maxPagesCount, depth, url, message);
 
 		} else {
-			LOGGER.info("Excluded url, status {}, {}, {}, depth {}, pages {}", code, url, message, depth, maxPagesCount.get(rootUrl));
+			LOGGER.info("Excluded Thread {}, status {}, pages {}, depth {}, url {}, message {}", threadId, code, maxPagesCount, depth, url, message);
 		}
 
 		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
@@ -524,63 +471,6 @@ public class FetcherJob implements Job {
 		}
 
 		return new ArrayList<>();
-
-	}
-
-	private synchronized Document getDocument(Directory directory, String url) throws IOException {
-
-		if (url != null) {
-
-			try (IndexReader indexReader = DirectoryReader.open(directory)) {
-
-				IndexSearcher isearcher = new IndexSearcher(indexReader);
-				Query query = new TermQuery(new Term(METADATA_URL, url));
-				TopDocs topDocs = isearcher.search(query, 1);
-
-				if (topDocs.totalHits.value > 0) {
-
-					ScoreDoc doc = topDocs.scoreDocs[0];
-					return isearcher.doc(doc.doc);
-				}
-			}
-		}
-
-		return null;
-	}
-
-	private synchronized void writeDocumentToIndex(Directory directory, Map<String, Object> metadata) throws IOException {
-
-		String url = (String) metadata.get(METADATA_URL);
-		Document oldDocument = getDocument(directory, url);
-
-		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(standardAnalyzer);
-		Document document = new Document();
-
-		try (IndexWriter iwriter = new IndexWriter(directory, indexWriterConfig)) {
-
-			metadata.entrySet().stream().filter(e -> !e.getKey().equals(METADATA_CONTENT)).forEach(e -> {
-
-				if (e.getValue() instanceof String) {
-					document.add(new StringField(e.getKey(), (String) e.getValue(), Store.YES));
-
-				} else if (e.getValue() instanceof Long) {
-					document.add(new StringField(e.getKey(), ((Long) e.getValue()).toString(), Store.YES));
-					document.add(new LongPoint(e.getKey() + "_RANGE_QUERY", (Long) e.getValue()));
-				}
-			});
-
-			if (oldDocument == null) {
-				iwriter.addDocument(document);
-			} else {
-				iwriter.updateDocument(new Term(METADATA_URL, url), document.getFields());
-			}
-
-			iwriter.flush();
-			iwriter.commit();
-
-		} catch (StackOverflowError | Exception e1) {
-			LOGGER.error("Failed to write document to index", e1);
-		}
 
 	}
 
