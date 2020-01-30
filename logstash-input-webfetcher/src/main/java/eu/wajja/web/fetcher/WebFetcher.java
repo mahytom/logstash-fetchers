@@ -57,6 +57,8 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_CONSUMER = "consumer";
 	protected static final String PROPERTY_THREAD_ID = "threadId";
 	protected static final String PROPERTY_CHROME_DRIVER = "chromeDriver";
+	protected static final String PROPERTY_CRAWLER_USER_AGENT = "crawlerUserAgent";
+	protected static final String PROPERTY_CRAWLER_REFERER = "crawlerReferer";
 
 	public static final String GROUP_NAME = "group001";
 
@@ -77,6 +79,8 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<String> CONFIG_CRON = PluginConfigSpec.stringSetting(PROPERTY_CRON);
 	public static final PluginConfigSpec<Long> CONFIG_THREADS = PluginConfigSpec.numSetting(PROPERTY_THREADS, 1l);
 	public static final PluginConfigSpec<String> CONFIG_CHROME_DRIVER = PluginConfigSpec.stringSetting(PROPERTY_CHROME_DRIVER, null, false, false);
+	public static final PluginConfigSpec<String> CONFIG_CRAWLER_USER_AGENT = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_USER_AGENT, "Wajja Crawler");
+	public static final PluginConfigSpec<String> CONFIG_CRAWLER_REFERER = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_REFERER, "http://wajja.eu/");
 
 	private final CountDownLatch done = new CountDownLatch(1);
 	protected volatile boolean stopped;
@@ -109,7 +113,9 @@ public class WebFetcher implements Input {
 		jobDataMap.put(PROPERTY_JAVASCRIPT, config.get(CONFIG_WAIT_JAVASCRIPT));
 		jobDataMap.put(PROPERTY_THREADS, config.get(CONFIG_THREADS));
 		jobDataMap.put(PROPERTY_CHROME_DRIVER, config.get(CONFIG_CHROME_DRIVER));
-
+		jobDataMap.put(PROPERTY_CRAWLER_REFERER, config.get(CONFIG_CRAWLER_REFERER));
+		jobDataMap.put(PROPERTY_CRAWLER_USER_AGENT, config.get(CONFIG_CRAWLER_USER_AGENT));
+		
 		jobDataMap.put(PROPERTY_PROXY_HOST, config.get(CONFIG_PROXY_HOST));
 		jobDataMap.put(PROPERTY_PROXY_PORT, config.get(CONFIG_PROXY_PORT));
 		jobDataMap.put(PROPERTY_PROXY_USER, config.get(CONFIG_PROXY_USER));
@@ -132,7 +138,7 @@ public class WebFetcher implements Input {
 				newJobDataMap.put(PROPERTY_URL, url);
 				newJobDataMap.put(PROPERTY_CONSUMER, consumer);
 				newJobDataMap.put(PROPERTY_THREAD_ID, threadId);
-				
+
 				String uuid = UUID.randomUUID().toString();
 
 				JobDetail job = JobBuilder.newJob(FetcherJob.class)
@@ -197,6 +203,8 @@ public class WebFetcher implements Input {
 				CONFIG_WAIT_JAVASCRIPT,
 				CONFIG_CRON,
 				CONFIG_THREADS,
+				CONFIG_CRAWLER_REFERER,
+				CONFIG_CRAWLER_USER_AGENT,
 				CONFIG_CHROME_DRIVER);
 	}
 

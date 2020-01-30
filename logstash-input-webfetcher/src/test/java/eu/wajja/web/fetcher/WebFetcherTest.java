@@ -39,6 +39,7 @@ public class WebFetcherTest {
 		configValues.put(WebFetcher.CONFIG_CRON.name(), properties.get(WebFetcher.PROPERTY_CRON));
 		configValues.put(WebFetcher.CONFIG_TIMEOUT.name(), new Long((String) properties.get(WebFetcher.PROPERTY_TIMEOUT)));
 		configValues.put(WebFetcher.CONFIG_THREADS.name(), new Long((String) properties.get(WebFetcher.PROPERTY_THREADS)));
+		configValues.put(WebFetcher.CONFIG_MAX_PAGES.name(), new Long((String) properties.get(WebFetcher.PROPERTY_MAX_PAGES)));
 		
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);

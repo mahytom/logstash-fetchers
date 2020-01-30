@@ -28,8 +28,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -65,6 +63,8 @@ import com.machinepublishers.jbrowserdriver.Settings.Builder;
 import com.machinepublishers.jbrowserdriver.Timezone;
 import com.machinepublishers.jbrowserdriver.UserAgent;
 
+import eu.wajja.web.fetcher.model.Result;
+
 @DisallowConcurrentExecution
 public class FetcherJob implements Job {
 
@@ -94,10 +94,12 @@ public class FetcherJob implements Job {
 	private List<String> excludedDataRegex;
 	private List<String> excludedLinkRegex;
 	private String chromeDriver;
+	private String crawlerUserAgent;
+	private String crawlerReferer;
 	private Long maxPagesCount = 0l;
+	private Long threads;
 	private Proxy proxy = null;
 	private WebDriver driver;
-	private ThreadPoolExecutor executorService;
 	private String threadId;
 
 	private List<String> tmpList = new ArrayList<>();
@@ -119,6 +121,8 @@ public class FetcherJob implements Job {
 		this.waitJavascript = dataMap.getBoolean(WebFetcher.PROPERTY_JAVASCRIPT);
 		this.excludedDataRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, new ArrayList<>());
 		this.excludedLinkRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, new ArrayList<>());
+		this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
+		this.crawlerReferer = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_REFERER);
 
 		initializeConnection(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
 				dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
@@ -126,8 +130,7 @@ public class FetcherJob implements Job {
 				dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
 				dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
 
-		Long threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
-		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
+		threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
 
 		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, url);
 
@@ -136,23 +139,20 @@ public class FetcherJob implements Job {
 		try {
 
 			URL robotUrl = new URL(url + "/" + ROBOT);
-			HttpURLConnection urlConnection = getHttpConnection(robotUrl);
-			int code = urlConnection.getResponseCode();
-			String message = urlConnection.getResponseMessage();
+			Result result = getURL(robotUrl, url, proxy, timeout, maxPagesCount, 1l, crawlerUserAgent, crawlerReferer);
 
-			if (code == HttpURLConnection.HTTP_OK) {
-				extractRobot(robotUrl.toString(), urlConnection, code, message);
+			if (result.getContent() != null) {
+
+				Map<String, Object> metadata = new HashMap<>();
+				metadata.put(METADATA_REFERENCE, ROBOT);
+				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(result.getContent()));
+
 			} else {
-				LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", code, url, message);
+				LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", result.getCode(), url, result.getMessage());
 			}
 
 			extractUrl(consumer, url, url, 0l);
 			deleteOldDocuments(consumer, dataFolder, id);
-
-			while (executorService.getActiveCount() > 0) {
-				LOGGER.debug("Thread count is : {}", executorService.getActiveCount());
-				Thread.sleep(5000);
-			}
 
 		} catch (Exception e) {
 			LOGGER.error("Failed to read robot", e);
@@ -323,46 +323,9 @@ public class FetcherJob implements Job {
 
 	}
 
-	private HttpURLConnection getHttpConnection(URL url) throws IOException {
-
-		HttpURLConnection httpURLConnection;
-
-		if (proxy == null) {
-			httpURLConnection = (HttpURLConnection) url.openConnection();
-		} else {
-			httpURLConnection = (HttpURLConnection) url.openConnection(proxy);
-		}
-
-		httpURLConnection.setConnectTimeout(timeout.intValue());
-		httpURLConnection.setReadTimeout(timeout.intValue());
-		httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
-		httpURLConnection.addRequestProperty("User-Agent", "Mozilla");
-		httpURLConnection.addRequestProperty("Referer", "google.com");
-
-		return httpURLConnection;
-	}
-
-	private void extractRobot(String url, HttpURLConnection urlConnection, int code, String message) {
-
-		try (InputStream inputStream = urlConnection.getInputStream()) {
-
-			LOGGER.info("Read url, status {}, {}, {}", code, url, message);
-
-			byte[] content = IOUtils.toByteArray(inputStream);
-			urlConnection.disconnect();
-
-			Map<String, Object> metadata = new HashMap<>();
-			metadata.put(METADATA_REFERENCE, ROBOT);
-			metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(content));
-
-		} catch (Exception e) {
-			LOGGER.error("Failed to extract robot.txt from root context", e);
-		}
-	}
-
 	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth) {
 
-		String urlString = urlStringTmp;
+		String urlString = null;
 
 		try {
 
@@ -379,47 +342,13 @@ public class FetcherJob implements Job {
 				tmpList.add(urlString);
 			}
 
-			Map<String, Object> metadata = new HashMap<>();
+			Result result = getURL(new URL(urlString), rootUrl, proxy, timeout, maxPagesCount, depth, this.crawlerUserAgent, this.crawlerReferer);
 
-			URL url = new URL(urlString);
-			HttpURLConnection urlConnection = getHttpConnection(url);
-			urlConnection.connect();
+			if (result.getContent() != null) {
 
-			int code = urlConnection.getResponseCode();
-			String message = urlConnection.getResponseMessage();
+				List<String> childPages = extractContent(consumer, result, uuid, depth);
+				Optional.ofNullable(childPages).orElse(new ArrayList<>()).stream().forEach(childUrl -> extractUrl(consumer, childUrl, result.getRootUrl(), depth + 1));
 
-			if (code == HttpURLConnection.HTTP_OK) {
-
-				parseContent(consumer, rootUrl, depth, urlString, uuid, metadata, url, urlConnection, code, message);
-
-			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_SEE_OTHER) {
-
-				String newUrl = urlConnection.getHeaderField("Location");
-
-				if (!newUrl.startsWith(rootUrl)) {
-					LOGGER.debug("Not redirecting to external url  {}", newUrl);
-				} else {
-					LOGGER.debug("Redirect needed to :  {}", newUrl);
-					extractUrl(consumer, newUrl, rootUrl, depth);
-				}
-
-			} else {
-				LOGGER.warn("Failed To Read Thread {}, status {}, pages {}, depth {}, url {}, message {}", threadId, code, maxPagesCount, depth, url, message);
-			}
-
-			urlConnection.disconnect();
-
-		} catch (SocketTimeoutException e) {
-
-			LOGGER.warn("Thread Timeout {}, url {}, sleeping and trying again", threadId, urlString);
-
-			try {
-
-				Thread.sleep(3000);
-				extractUrl(consumer, urlString, rootUrl, depth);
-
-			} catch (InterruptedException e1) {
-				Thread.currentThread().interrupt();
 			}
 
 		} catch (Exception e) {
@@ -428,39 +357,142 @@ public class FetcherJob implements Job {
 
 	}
 
-	private void parseContent(Consumer<Map<String, Object>> consumer, String rootUrl, Long depth, String urlString, String uuid, Map<String, Object> metadata, URL url, HttpURLConnection urlConnection, int code, String message) throws IOException {
+	public static Result getURL(URL url, String rootUrl, Proxy proxy, Long timeout, Long maxPagesCount, Long depth, String userAgent, String referer) {
 
-		Map<String, List<String>> headers = urlConnection.getHeaderFields();
-		List<String> childPages = new ArrayList<>();
+		HttpURLConnection httpURLConnection = null;
+		Result result = new Result();
 
-		try (InputStream inputStream = urlConnection.getInputStream()) {
+		try {
 
-			byte[] bytes = IOUtils.toByteArray(inputStream);
-			childPages = extractContent(consumer, rootUrl, urlString, uuid, url, code, message, headers, depth, bytes);
+			if (proxy == null) {
+				httpURLConnection = (HttpURLConnection) url.openConnection();
+			} else {
+				httpURLConnection = (HttpURLConnection) url.openConnection(proxy);
+			}
 
-		} catch (Exception e1) {
+			httpURLConnection.setConnectTimeout(timeout.intValue());
+			httpURLConnection.setReadTimeout(timeout.intValue());
+			httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
+			httpURLConnection.addRequestProperty("User-Agent", userAgent);
+			httpURLConnection.addRequestProperty("Referer", referer);
 
-			LOGGER.warn("Failed Thread {}, status {}, pages {}, depth {}, url {}, message {}", threadId, code, maxPagesCount, depth, url, message, e1);
+			httpURLConnection.connect();
 
+			int code = httpURLConnection.getResponseCode();
+			String message = httpURLConnection.getResponseMessage();
+			result.setCode(code);
+			result.setMessage(message);
+			result.setUrl(url.toString());
+			result.setRootUrl(rootUrl);
+
+			if (code == HttpURLConnection.HTTP_OK) {
+
+				InputStream inputStream = httpURLConnection.getInputStream();
+				byte[] content = IOUtils.toByteArray(inputStream);
+
+				result.setContent(content);
+				result.setHeaders(httpURLConnection.getHeaderFields());
+
+			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_SEE_OTHER) {
+
+				String newUrl = httpURLConnection.getHeaderField("Location");
+
+				if (!newUrl.startsWith(rootUrl)) {
+					LOGGER.debug("Not redirecting to external url  {}", newUrl);
+				} else {
+					LOGGER.debug("Redirect needed to :  {}", newUrl);
+					return getURL(new URL(newUrl), rootUrl, proxy, timeout, maxPagesCount, depth, userAgent, referer);
+				}
+
+			} else {
+				LOGGER.warn("Failed To Read status {}, pages {}, depth {}, url {}, message {}", code, maxPagesCount, depth, url, message);
+			}
+
+		} catch (SocketTimeoutException e) {
+
+			LOGGER.warn("Thread url {}, sleeping and trying again", url);
+
+			try {
+
+				Thread.sleep(3000);
+				return getURL(url, rootUrl, proxy, timeout, maxPagesCount, depth, userAgent, referer);
+
+			} catch (InterruptedException e1) {
+				Thread.currentThread().interrupt();
+			}
+
+		} catch (Exception e) {
+			LOGGER.error("Failed to retrieve URL url {}", url.toString(), e);
+		} finally {
+
+			if (httpURLConnection != null) {
+				httpURLConnection.disconnect();
+			}
 		}
 
-		Optional.ofNullable(childPages).orElse(new ArrayList<>()).stream().forEach(childUrl -> executorService.execute(() -> extractUrl(consumer, childUrl, rootUrl, depth + 1)));
-
+		return result;
 	}
 
 	@SuppressWarnings("unchecked")
-	private List<String> extractContent(Consumer<Map<String, Object>> consumer, String rootUrl, String urlString, String uuid, URL url, int code, String message, Map<String, List<String>> headers, Long depth, byte[] bytes) throws IOException {
+	private List<String> extractContent(Consumer<Map<String, Object>> consumer, Result result, String uuid, Long depth) throws IOException {
 
-		Map<String, Object> metadata = parseHtml(urlString, rootUrl, headers, bytes, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC), uuid);
+		byte[] bytes = result.getContent();
+		Map<String, List<String>> headers = result.getHeaders();
 
-		if (excludedDataRegex.stream().noneMatch(ex -> urlString.matches(ex))) {
+		Map<String, Object> metadata = new HashMap<>();
+		metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
+		metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
+		metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
+		metadata.put(METADATA_URL, result.getUrl());
+		metadata.put(METADATA_UUID, uuid);
+		metadata.put(METADATA_STATUS, 200);
+		metadata.put(METADATA_CONTEXT, result.getRootUrl());
+		metadata.put(METADATA_COMMAND, Command.ADD.toString());
+
+		headers.entrySet().stream().filter(entry -> entry.getKey() != null).forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
+
+		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
+
+			String bodyHtml = null;
+
+			if (waitJavascript) {
+
+				driver.get(result.getUrl());
+				bodyHtml = driver.getPageSource();
+
+				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bodyHtml.getBytes()));
+
+			} else {
+				bodyHtml = IOUtils.toString(bytes, StandardCharsets.UTF_8.name());
+			}
+
+			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
+			Elements elements = document.getElementsByAttribute("href");
+
+			String simpleUrlString = getSimpleUrl(result.getRootUrl());
+
+			List<String> childPages = elements.stream().map(e -> e.attr("href"))
+					.filter(href -> (!href.startsWith(HTTP) && !href.startsWith(HTTPS) && !href.startsWith("mailto") && !href.startsWith("javascript") && !href.endsWith(".css") && !href.endsWith(".js")) || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
+					.filter(href -> !href.equals("/") && !href.startsWith("//"))
+					.filter(href -> excludedLinkRegex.stream().noneMatch(ex -> href.matches(ex)))
+					.sorted()
+					.collect(Collectors.toList());
+
+			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> (href.startsWith(HTTP) || href.startsWith(HTTPS)) && !href.startsWith(HTTP + simpleUrlString) && !href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
+
+			metadata.put(METADATA_CHILD, new ArrayList<>(new HashSet<>(childPages)));
+			metadata.put(METADATA_EXTERNAL, new ArrayList<>(new HashSet<>(externalPages)));
+
+		}
+
+		if (excludedDataRegex.stream().noneMatch(ex -> result.getUrl().matches(ex))) {
 
 			maxPagesCount++;
 			consumer.accept(metadata);
-			LOGGER.info("Thread {}, status {}, pages {}, depth {}, url {}, message {}", threadId, code, maxPagesCount, depth, url, message);
+			LOGGER.info("Thread {}, status {}, pages {}, depth {}, url {}, message {}, rootUrl {}, size {}, tmpList {}", threadId, result.getCode(), maxPagesCount, depth, result.getUrl(), result.getMessage(), result.getRootUrl(), metadata.get(METADATA_CONTENT).toString().length(), tmpList.size());
 
 		} else {
-			LOGGER.info("Excluded Thread {}, status {}, pages {}, depth {}, url {}, message {}", threadId, code, maxPagesCount, depth, url, message);
+			LOGGER.info("Excluded Thread {}, status {}, pages {}, depth {}, url {}, message {}, rootUrl {}, size {}, tmpList {}", threadId, result.getCode(), maxPagesCount, depth, result.getUrl(), result.getMessage(), result.getRootUrl(), result.getContent().length, tmpList.size());
 		}
 
 		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
@@ -519,57 +551,6 @@ public class FetcherJob implements Job {
 		return urlString;
 	}
 
-	private Map<String, Object> parseHtml(String urlString, String rootUrl, Map<String, List<String>> headers, byte[] bytes, Long epochSecond, String uuid) throws IOException {
-
-		Map<String, Object> metadata = new HashMap<>();
-		metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(urlString.getBytes()));
-		metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
-		metadata.put(METADATA_EPOCH, epochSecond);
-		metadata.put(METADATA_URL, urlString);
-		metadata.put(METADATA_UUID, uuid);
-		metadata.put(METADATA_STATUS, 200);
-		metadata.put(METADATA_CONTEXT, rootUrl);
-		metadata.put(METADATA_COMMAND, Command.ADD.toString());
-
-		headers.entrySet().stream().filter(entry -> entry.getKey() != null).forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
-
-		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
-
-			String bodyHtml = null;
-
-			if (waitJavascript) {
-
-				driver.get(urlString);
-				bodyHtml = driver.getPageSource();
-
-				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bodyHtml.getBytes()));
-
-			} else {
-				bodyHtml = IOUtils.toString(bytes, StandardCharsets.UTF_8.name());
-			}
-
-			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
-			Elements elements = document.getElementsByAttribute("href");
-
-			String simpleUrlString = getSimpleUrl(rootUrl);
-
-			List<String> childPages = elements.stream().map(e -> e.attr("href"))
-					.filter(href -> (!href.startsWith(HTTP) && !href.startsWith(HTTPS) && !href.startsWith("mailto") && !href.startsWith("javascript") && !href.endsWith(".css") && !href.endsWith(".js")) || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
-					.filter(href -> !href.equals("/") && !href.startsWith("//"))
-					.filter(href -> excludedLinkRegex.stream().noneMatch(ex -> href.matches(ex)))
-					.sorted()
-					.collect(Collectors.toList());
-
-			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> (href.startsWith(HTTP) || href.startsWith(HTTPS)) && !href.startsWith(HTTP + simpleUrlString) && !href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
-
-			metadata.put(METADATA_CHILD, new ArrayList<>(new HashSet<>(childPages)));
-			metadata.put(METADATA_EXTERNAL, new ArrayList<>(new HashSet<>(externalPages)));
-
-		}
-
-		return metadata;
-	}
-
 	private String getSimpleUrl(String urlString) {
 
 		try {
@@ -595,7 +576,7 @@ public class FetcherJob implements Job {
 			return stringBuilder.toString();
 
 		} catch (MalformedURLException e) {
-			e.printStackTrace();
+			LOGGER.error("MalformedURLException", e);
 		}
 
 		return urlString;
