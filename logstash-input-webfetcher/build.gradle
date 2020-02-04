@@ -31,7 +31,7 @@ buildscript {
     }
 
     dependencies {
-        classpath 'com.github.jengelman.gradle.plugins:shadow:1.2.4'
+        classpath 'com.github.jengelman.gradle.plugins:shadow:5.2.0'
     }
 }
 
@@ -39,9 +39,9 @@ repositories {
     mavenCentral()
 }
 
-task wrapper(type: Wrapper) {
-    gradleVersion = '4.0'
-}
+//task wrapper(type: Wrapper) {
+ //   gradleVersion = '4.0'
+//}
 
 apply plugin: 'com.github.johnrengelman.shadow'
 
@@ -61,6 +61,9 @@ dependencies {
    	compile group: 'com.machinepublishers', name: 'jbrowserdriver', version: '1.1.0-RC2'
    	compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.0.1'
    	compile group: 'org.quartz-scheduler', name: 'quartz', version: '2.3.2'
+    compile group: 'org.codehaus.janino', name: 'janino', version: '3.1.0'
+	compile group: 'net.logstash.logback', name: 'logstash-logback-encoder', version: '4.9'
+   	compile group: 'ch.qos.logback', name: 'logback-classic', version: '1.2.3'
    	
     compile fileTree(dir: LOGSTASH_CORE_PATH, include: "**/logstash-core-?.?.?.jar")
 

@@ -97,6 +97,8 @@ public class FetcherJob implements Job {
 	private String crawlerUserAgent;
 	private String crawlerReferer;
 	private Long maxPagesCount = 0l;
+	private Long excludedLinkPagesCount = 0l;
+	private Long excludedDataPagesCount = 0l;
 	private Long threads;
 	private Proxy proxy = null;
 	private WebDriver driver;
@@ -132,7 +134,8 @@ public class FetcherJob implements Job {
 
 		threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
 
-		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, url);
+		LOGGER.info("############Starting fetch for thread : {}, url : {}##################################", threadId, url);
+        LOGGER.info();
 
 		String id = Base64.getEncoder().encodeToString(url.getBytes());
 
@@ -164,7 +167,8 @@ public class FetcherJob implements Job {
 			this.driver.quit();
 		}
 
-		LOGGER.info("Finished Thread {}", threadId);
+		LOGGER.info("##############################Finished Thread {}, for url: {}##########################", threadId, url);
+        LOGGER.info("Downloaded {} documents for the {} job", maxPagesCount,url)
 
 	}
 
@@ -489,10 +493,11 @@ public class FetcherJob implements Job {
 
 			maxPagesCount++;
 			consumer.accept(metadata);
-			LOGGER.info("Thread {}, status {}, pages {}, depth {}, url {}, message {}, rootUrl {}, size {}, tmpList {}", threadId, result.getCode(), maxPagesCount, depth, result.getUrl(), result.getMessage(), result.getRootUrl(), metadata.get(METADATA_CONTENT).toString().length(), tmpList.size());
+			LOGGER.info("Accepting URL for further processing : {} - Thread {}, status {}, pages {}, depth {},  message {}, rootUrl {}, size {}, tmpList {}", result.getUrl(), threadId, result.getCode(), maxPagesCount, depth,  result.getMessage(), result.getRootUrl(), metadata.get(METADATA_CONTENT).toString().length(), tmpList.size());
 
 		} else {
-			LOGGER.info("Excluded Thread {}, status {}, pages {}, depth {}, url {}, message {}, rootUrl {}, size {}, tmpList {}", threadId, result.getCode(), maxPagesCount, depth, result.getUrl(), result.getMessage(), result.getRootUrl(), result.getContent().length, tmpList.size());
+            excludedDataPagesCount++;
+			LOGGER.info("This url is excluded by the excludedDataRegex : url {}, Thread {}, status {}, pages {}, depth {},  message {}, rootUrl {}, size {}, tmpList {}", result.getUrl(),threadId, result.getCode(), maxPagesCount, depth,  result.getMessage(), result.getRootUrl(), result.getContent().length, tmpList.size());
 		}
 
 		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
