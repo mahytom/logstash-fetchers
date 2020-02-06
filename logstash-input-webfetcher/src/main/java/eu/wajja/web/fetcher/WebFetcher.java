@@ -149,7 +149,7 @@ public class WebFetcher implements Input {
 				Trigger trigger = TriggerBuilder.newTrigger()
 						.withIdentity(uuid, GROUP_NAME)
 						.startNow()
-						.withSchedule(CronScheduleBuilder.cronSchedule(this.cron))
+				//		.withSchedule(CronScheduleBuilder.cronSchedule(this.cron))
 						.build();
 
 				SchedulerBuilder.getScheduler().scheduleJob(job, trigger);

@@ -28,6 +28,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Set;
+import java.util.HashSet;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -53,6 +55,8 @@ import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.machinepublishers.jbrowserdriver.JBrowserDriver;
@@ -69,6 +73,8 @@ import eu.wajja.web.fetcher.model.Result;
 public class FetcherJob implements Job {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(FetcherJob.class);
+	private static final Logger EXCLUDED_LINKS_LOGGER = LoggerFactory.getLogger("excludedLinks");
+	private static final Logger EXCLUDED_DATA_LOGGER = LoggerFactory.getLogger("excludedData");
 
 	private static final String METADATA_EPOCH = "epochSecond";
 	private static final String METADATA_REFERENCE = "reference";
@@ -97,7 +103,8 @@ public class FetcherJob implements Job {
 	private String crawlerUserAgent;
 	private String crawlerReferer;
 	private Long maxPagesCount = 0l;
-	private Long excludedLinkPagesCount = 0l;
+	//private Long excludedLinkPagesCount = 0l;
+    private Set encounteredExcludedLinks;
 	private Long excludedDataPagesCount = 0l;
 	private Long threads;
 	private Proxy proxy = null;
@@ -109,9 +116,21 @@ public class FetcherJob implements Job {
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
 
+
+
+
+        encounteredExcludedLinks = new HashSet<String>();
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
 		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
 		String url = dataMap.getString(WebFetcher.PROPERTY_URL);
+        String logFileName = url.replaceFirst("http://europa.eu/","");
+        logFileName = url.replaceFirst("https://europa.eu/","");
+        logFileName = url.replace("/","");
+        MDC.put("logFileNameLinks",logFileName+"_excludedLinks");
+        MDC.put("logFileNameData",logFileName+"_excludedData");
+        EXCLUDED_DATA_LOGGER.info("Excluded data : "+url);
+        EXCLUDED_LINKS_LOGGER.info("Excluded links : "+url);
+        
 
 		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
 
@@ -135,7 +154,7 @@ public class FetcherJob implements Job {
 		threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
 
 		LOGGER.info("############Starting fetch for thread : {}, url : {}##################################", threadId, url);
-        LOGGER.info();
+        LOGGER.info("");
 
 		String id = Base64.getEncoder().encodeToString(url.getBytes());
 
@@ -168,7 +187,11 @@ public class FetcherJob implements Job {
 		}
 
 		LOGGER.info("##############################Finished Thread {}, for url: {}##########################", threadId, url);
-        LOGGER.info("Downloaded {} documents for the {} job", maxPagesCount,url)
+        LOGGER.info("Downloaded {} documents for the {} job", maxPagesCount,url);
+        LOGGER.info("Excluded : ");
+        LOGGER.info("Links : {} ", encounteredExcludedLinks.size());
+        LOGGER.info("Data : {} ", excludedDataPagesCount);
+		LOGGER.info("##############################END##########################");
 
 	}
 
@@ -478,7 +501,7 @@ public class FetcherJob implements Job {
 			List<String> childPages = elements.stream().map(e -> e.attr("href"))
 					.filter(href -> (!href.startsWith(HTTP) && !href.startsWith(HTTPS) && !href.startsWith("mailto") && !href.startsWith("javascript") && !href.endsWith(".css") && !href.endsWith(".js")) || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
 					.filter(href -> !href.equals("/") && !href.startsWith("//"))
-					.filter(href -> excludedLinkRegex.stream().noneMatch(ex -> href.matches(ex)))
+					.filter(href -> excludedLinkRegex.stream().noneMatch(ex -> logMatch(href,ex)))
 					.sorted()
 					.collect(Collectors.toList());
 
@@ -510,6 +533,19 @@ public class FetcherJob implements Job {
 		return new ArrayList<>();
 
 	}
+
+    private boolean logMatch (String string, String regex){
+        if (string.matches(regex)){
+            LOGGER.debug("excludLinkRegex match : {}", string);
+            encounteredExcludedLinks.add(string);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+        
+
 
 	private String getUrlString(String urlString, String rootUrl) throws MalformedURLException {
 
