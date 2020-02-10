@@ -119,16 +119,13 @@ public class FetcherJob implements Job {
 
 		encounteredExcludedLinks = new HashSet<String>();
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
-		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap
-				.get(WebFetcher.PROPERTY_CONSUMER);
+		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
 		String url = dataMap.getString(WebFetcher.PROPERTY_URL);
 		String logFileName = setLogFileName(url);
 		jobName = logFileName;
 		// MDC.put("logFileNameLinks",logFileName+"_excludedLinks");
 		// MDC.put("logFileNameData",logFileName+"_excludedData");
 		MDC.put("logFileName", logFileName);
-		EXCLUDED_DATA_LOGGER.info("Excluded data : " + url);
-		EXCLUDED_LINKS_LOGGER.info("Excluded links : " + url);
 
 		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
 
@@ -138,23 +135,18 @@ public class FetcherJob implements Job {
 		this.chromeDriver = dataMap.getString(WebFetcher.PROPERTY_CHROME_DRIVER);
 		this.threadId = dataMap.getString(WebFetcher.PROPERTY_THREAD_ID);
 		this.waitJavascript = dataMap.getBoolean(WebFetcher.PROPERTY_JAVASCRIPT);
-		this.excludedDataRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA,
-				new ArrayList<>());
-		this.excludedLinkRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK,
-				new ArrayList<>());
+		this.excludedDataRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, new ArrayList<>());
+		this.excludedLinkRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, new ArrayList<>());
 		this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
 		this.crawlerReferer = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_REFERER);
 
-		initializeConnection(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
-				dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS), dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
-				dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT), dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
+		initializeConnection(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER), dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS), dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST), dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT), dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
 
 		threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
 
 		LOGGER.info("######################################################################################");
-		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId,url);
-		LOGGER.info("######################################################################################", threadId,
-				url);
+		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, url);
+		LOGGER.info("######################################################################################", threadId, url);
 
 		String id = Base64.getEncoder().encodeToString(url.getBytes());
 
@@ -170,8 +162,7 @@ public class FetcherJob implements Job {
 				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(result.getContent()));
 
 			} else {
-				LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", result.getCode(), url,
-						result.getMessage());
+				LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", result.getCode(), url, result.getMessage());
 			}
 
 			extractUrl(consumer, url, url, 0l);
@@ -191,7 +182,6 @@ public class FetcherJob implements Job {
 
 	}
 
-
 	private String setLogFileName(String url) {
 		// TODO Auto-generated method stub
 		String logFileName = url.replace("http://europa.eu/", "");
@@ -205,7 +195,6 @@ public class FetcherJob implements Job {
 		logFileName = logFileName.replace("/", "");
 		return logFileName;
 	}
-
 
 	private void initializeConnection(String proxyUser, String proxyPass, String proxyHost, Long proxyPort, Boolean disableSSLcheck) {
 
@@ -234,25 +223,28 @@ public class FetcherJob implements Job {
 
 			TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
 
-	public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-		return null;
-	}
+				public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+					return null;
+				}
 
-	public void checkClientTrusted(X509Certificate[] certs, String authType) {
-	}
+				public void checkClientTrusted(X509Certificate[] certs, String authType) {
+				}
 
-	public void checkServerTrusted(X509Certificate[] certs, String authType) {
-	}}};
+				public void checkServerTrusted(X509Certificate[] certs, String authType) {
+				}
+			} };
 
-	try{
+			try {
 
-	SSLContext sc = SSLContext.getInstance(
-			"SSL");sc.init(null,trustAllCerts,new java.security.SecureRandom());HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+				SSLContext sc = SSLContext.getInstance("SSL");
+				sc.init(null, trustAllCerts, new java.security.SecureRandom());
+				HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
 
-	}catch(NoSuchAlgorithmException|
-	KeyManagementException e){LOGGER.error("Failed to set authentication cert trust",e);}
+			} catch (NoSuchAlgorithmException | KeyManagementException e) {
+				LOGGER.error("Failed to set authentication cert trust", e);
+			}
 
-	HostnameVerifier allHostsValid = new HostnameVerifier() {
+			HostnameVerifier allHostsValid = new HostnameVerifier() {
 
 				public boolean verify(String hostname, SSLSession session) {
 					return true;
@@ -261,43 +253,50 @@ public class FetcherJob implements Job {
 
 			HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
 
+		}
+
+		if (this.waitJavascript) {
+
+			if (StringUtils.isEmpty(chromeDriver)) {
+
+				Builder settings = Settings.builder().timezone(Timezone.EUROPE_BRUSSELS).connectTimeout(this.timeout.intValue()).maxConnections(50).quickRender(true).blockMedia(true).userAgent(UserAgent.CHROME).logger("ch.qos.logback.core.ConsoleAppender").processes(2)
+						.loggerLevel(java.util.logging.Level.INFO).hostnameVerification(false);
+
+				if (proxyUser != null && proxyPass != null && proxyPort != null) {
+
+					ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser, proxyPass);
+					settings.proxy(proxyConfig);
+					settings.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=");
+				}
+
+				driver = new JBrowserDriver(settings.build());
+
+			} else {
+
+				Path chrome = Paths.get(chromeDriver);
+				Boolean isExecutable = chrome.toFile().setExecutable(true);
+
+				if (isExecutable) {
+					LOGGER.info("set {} to be executable", chromeDriver);
+				}
+
+				System.setProperty("webdriver.chrome.driver", chrome.toAbsolutePath().toString());
+
+				ChromeOptions chromeOptions = new ChromeOptions();
+				chromeOptions.addArguments("--headless");
+				chromeOptions.addArguments("--no-sandbox");
+				chromeOptions.addArguments("--disable-dev-shm-usage");
+
+				driver = new ChromeDriver(chromeOptions);
+
+				// https://github.com/seleniumhq/selenium-google-code-issue-archive/issues/27
+				((JavascriptExecutor) driver).executeScript("window.alert = function(msg) { }");
+				((JavascriptExecutor) driver).executeScript("window.confirm = function(msg) { }");
+
+			}
+
+		}
 	}
-
-	if(this.waitJavascript){
-
-	if(StringUtils.isEmpty(chromeDriver)){
-
-	Builder settings = Settings.builder().timezone(Timezone.EUROPE_BRUSSELS).connectTimeout(this.timeout.intValue())
-			.maxConnections(50).quickRender(true).blockMedia(true).userAgent(UserAgent.CHROME)
-			.logger("ch.qos.logback.core.ConsoleAppender").processes(2).loggerLevel(java.util.logging.Level.INFO)
-			.hostnameVerification(false);
-
-	if(proxyUser!=null&&proxyPass!=null&&proxyPort!=null){
-
-	ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser,
-			proxyPass);settings.proxy(proxyConfig);settings.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=");}
-
-	driver=new JBrowserDriver(settings.build());
-
-	}else{
-
-	Path chrome = Paths.get(chromeDriver);
-	Boolean isExecutable = chrome.toFile().setExecutable(true);
-
-	if(isExecutable){LOGGER.info("set {} to be executable",chromeDriver);}
-
-	System.setProperty("webdriver.chrome.driver",chrome.toAbsolutePath().toString());
-
-	ChromeOptions chromeOptions = new ChromeOptions();chromeOptions.addArguments("--headless");chromeOptions.addArguments("--no-sandbox");chromeOptions.addArguments("--disable-dev-shm-usage");
-
-	driver=new ChromeDriver(chromeOptions);
-
-	// https://github.com/seleniumhq/selenium-google-code-issue-archive/issues/27
-	((JavascriptExecutor)driver).executeScript("window.alert = function(msg) { }");((JavascriptExecutor)driver).executeScript("window.confirm = function(msg) { }");
-
-	}
-
-	}}
 
 	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String dataFolder, String id) {
 
@@ -314,7 +313,7 @@ public class FetcherJob implements Job {
 			try {
 				List<String> legacyFile = Arrays.asList(objectMapper.readValue(pathFile.toFile(), String[].class));
 				List<String> urlsForDeletion = legacyFile.stream().filter(l -> !tmpList.contains(l)).collect(Collectors.toList());
-                urlsForDeletionCount = urlsForDeletion.size();
+				urlsForDeletionCount = urlsForDeletion.size();
 				LOGGER.info("Thread deleting {}, deleting {} urls", threadId, urlsForDeletion.size());
 
 				urlsForDeletion.parallelStream().forEach(url -> {
@@ -496,10 +495,7 @@ public class FetcherJob implements Job {
 
 			List<String> childPages = elements.stream().map(e -> e.attr("href"))
 					.filter(href -> (!href.startsWith(HTTP) && !href.startsWith(HTTPS) && !href.startsWith("mailto") && !href.startsWith("javascript") && !href.endsWith(".css") && !href.endsWith(".js")) || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
-					.filter(href -> !href.equals("/") && !href.startsWith("//"))
-					.filter(href -> excludedLinkRegex.stream().noneMatch(ex -> logMatch(href,ex)))
-					.sorted()
-					.collect(Collectors.toList());
+					.filter(href -> !href.equals("/") && !href.startsWith("//")).filter(href -> excludedLinkRegex.stream().noneMatch(ex -> logMatch(href, ex))).sorted().collect(Collectors.toList());
 
 			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> (href.startsWith(HTTP) || href.startsWith(HTTPS)) && !href.startsWith(HTTP + simpleUrlString) && !href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
 
@@ -512,15 +508,16 @@ public class FetcherJob implements Job {
 
 			maxPagesCount++;
 			consumer.accept(metadata);
-			LOGGER.info("Accepting URL for further processing : {} - Thread {}, status {}, pages {}, depth {},  message {}, rootUrl {}, size {}, tmpList {}", result.getUrl(), threadId, result.getCode(), maxPagesCount, depth,  result.getMessage(), result.getRootUrl(), metadata.get(METADATA_CONTENT).toString().length(), tmpList.size());
+			LOGGER.info("Accepting URL for further processing : {} - Thread {}, status {}, pages {}, depth {},  message {}, rootUrl {}, size {}, tmpList {}", result.getUrl(), threadId, result.getCode(), maxPagesCount, depth, result.getMessage(), result.getRootUrl(),
+					metadata.get(METADATA_CONTENT).toString().length(), tmpList.size());
 			LogstashJson jsonLog = new LogstashJson();
-			logToLogstash("addUrl",result.getUrl(),jobName);
-
+			logToLogstash("addUrl", result.getUrl(), jobName);
 
 		} else {
-            excludedDataPagesCount++;
-			LOGGER.debug("This url is excluded by the excludedDataRegex : url {}, Thread {}, status {}, pages {}, depth {},  message {}, rootUrl {}, size {}, tmpList {}", result.getUrl(),threadId, result.getCode(), maxPagesCount, depth,  result.getMessage(), result.getRootUrl(), result.getContent().length, tmpList.size());
-			logToLogstash("exludeUrl",result.getUrl(),jobName);
+			excludedDataPagesCount++;
+			LOGGER.debug("This url is excluded by the excludedDataRegex : url {}, Thread {}, status {}, pages {}, depth {},  message {}, rootUrl {}, size {}, tmpList {}", result.getUrl(), threadId, result.getCode(), maxPagesCount, depth, result.getMessage(), result.getRootUrl(),
+					result.getContent().length, tmpList.size());
+			logToLogstash("exludeUrl", result.getUrl(), jobName);
 		}
 
 		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
@@ -625,30 +622,26 @@ public class FetcherJob implements Job {
 		jsonLog.setMethod(method);
 		jsonLog.setUrl(url);
 		jsonLog.setJob(jobName);
-		 try {
-	            String log = objectMapper.writeValueAsString(jsonLog);
-	            LOGSTASH_LOGGER.info(log);
-	        } catch (JsonProcessingException e) {
-	            LOGGER.error("Failed to send json to logstash", e);
-	        }
+		try {
+			String log = objectMapper.writeValueAsString(jsonLog);
+			LOGSTASH_LOGGER.info(log);
+		} catch (JsonProcessingException e) {
+			LOGGER.error("Failed to send json to logstash", e);
+		}
 	}
-	
-	private void logJob(String url, Long maxPagesCount, Set encounteredExcludedLinks, Long excludedDataPagesCount,
-			int urlsForDeletionCount) {
-		LOGGER.info(
-				"#############################################################################################################################");
+
+	private void logJob(String url, Long maxPagesCount, Set encounteredExcludedLinks, Long excludedDataPagesCount, int urlsForDeletionCount) {
+		LOGGER.info("#############################################################################################################################");
 		LOGGER.info("Finished Thread {}, for url: {}", threadId, url);
-		LOGGER.info("Analysed {} documents",
-				maxPagesCount + encounteredExcludedLinks.size() + excludedDataPagesCount);
+		LOGGER.info("Analysed {} documents", maxPagesCount + encounteredExcludedLinks.size() + excludedDataPagesCount);
 		LOGGER.info("                              Downloaded {} documents", maxPagesCount);
 		LOGGER.info("                              Excluded: ");
 		LOGGER.info("                                  Links: {} ", encounteredExcludedLinks.size());
 		LOGGER.info("                                  Data: {} ", excludedDataPagesCount);
 		LOGGER.info("                              Deleted: ");
 		LOGGER.info("                                  Old urls : {} ", urlsForDeletionCount);
-		LOGGER.info(
-				"#######################################################END####################################################################");
-		
+		LOGGER.info("#######################################################END####################################################################");
+
 	}
 
 }
