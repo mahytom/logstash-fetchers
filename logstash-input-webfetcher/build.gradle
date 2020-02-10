@@ -118,3 +118,16 @@ task gem(dependsOn: [downloadAndInstallJRuby, removeObsoleteJars, vendor, genera
         buildGem(projectDir, buildDir, pluginInfo.pluginFullName() + ".gemspec")
     }
 }
+
+test {
+    useJUnit()
+    maxHeapSize = '1G'
+ testLogging {
+    exceptionFormat = 'full'
+    events = ["passed", "failed", "skipped"]
+    showStandardStreams = true
+  }
+}
+
+
+

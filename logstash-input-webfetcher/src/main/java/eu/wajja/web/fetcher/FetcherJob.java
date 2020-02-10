@@ -27,9 +27,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.Set;
-import java.util.HashSet;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -57,7 +56,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
-
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.machinepublishers.jbrowserdriver.JBrowserDriver;
 import com.machinepublishers.jbrowserdriver.ProxyConfig;
@@ -67,14 +66,16 @@ import com.machinepublishers.jbrowserdriver.Settings.Builder;
 import com.machinepublishers.jbrowserdriver.Timezone;
 import com.machinepublishers.jbrowserdriver.UserAgent;
 
+import eu.wajja.web.fetcher.model.LogstashJson;
 import eu.wajja.web.fetcher.model.Result;
 
 @DisallowConcurrentExecution
 public class FetcherJob implements Job {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(FetcherJob.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger("general");
 	private static final Logger EXCLUDED_LINKS_LOGGER = LoggerFactory.getLogger("excludedLinks");
 	private static final Logger EXCLUDED_DATA_LOGGER = LoggerFactory.getLogger("excludedData");
+	private static final Logger LOGSTASH_LOGGER = LoggerFactory.getLogger("logstashLogger");
 
 	private static final String METADATA_EPOCH = "epochSecond";
 	private static final String METADATA_REFERENCE = "reference";
@@ -103,34 +104,33 @@ public class FetcherJob implements Job {
 	private String crawlerUserAgent;
 	private String crawlerReferer;
 	private Long maxPagesCount = 0l;
-	//private Long excludedLinkPagesCount = 0l;
-    private Set encounteredExcludedLinks;
+	// private Long excludedLinkPagesCount = 0l;
+	private Set encounteredExcludedLinks;
 	private Long excludedDataPagesCount = 0l;
+	private int urlsForDeletionCount = 0;
 	private Long threads;
 	private Proxy proxy = null;
 	private WebDriver driver;
 	private String threadId;
+	private String jobName = "";
 
 	private List<String> tmpList = new ArrayList<>();
 
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
 
-
-
-
-        encounteredExcludedLinks = new HashSet<String>();
+		encounteredExcludedLinks = new HashSet<String>();
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
-		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
+		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap
+				.get(WebFetcher.PROPERTY_CONSUMER);
 		String url = dataMap.getString(WebFetcher.PROPERTY_URL);
-        String logFileName = url.replaceFirst("http://europa.eu/","");
-        logFileName = url.replaceFirst("https://europa.eu/","");
-        logFileName = url.replace("/","");
-        MDC.put("logFileNameLinks",logFileName+"_excludedLinks");
-        MDC.put("logFileNameData",logFileName+"_excludedData");
-        EXCLUDED_DATA_LOGGER.info("Excluded data : "+url);
-        EXCLUDED_LINKS_LOGGER.info("Excluded links : "+url);
-        
+		String logFileName = setLogFileName(url);
+		jobName = logFileName;
+		// MDC.put("logFileNameLinks",logFileName+"_excludedLinks");
+		// MDC.put("logFileNameData",logFileName+"_excludedData");
+		MDC.put("logFileName", logFileName);
+		EXCLUDED_DATA_LOGGER.info("Excluded data : " + url);
+		EXCLUDED_LINKS_LOGGER.info("Excluded links : " + url);
 
 		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
 
@@ -140,21 +140,23 @@ public class FetcherJob implements Job {
 		this.chromeDriver = dataMap.getString(WebFetcher.PROPERTY_CHROME_DRIVER);
 		this.threadId = dataMap.getString(WebFetcher.PROPERTY_THREAD_ID);
 		this.waitJavascript = dataMap.getBoolean(WebFetcher.PROPERTY_JAVASCRIPT);
-		this.excludedDataRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, new ArrayList<>());
-		this.excludedLinkRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, new ArrayList<>());
+		this.excludedDataRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA,
+				new ArrayList<>());
+		this.excludedLinkRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK,
+				new ArrayList<>());
 		this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
 		this.crawlerReferer = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_REFERER);
 
 		initializeConnection(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
-				dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
-				dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
-				dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
-				dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
+				dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS), dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
+				dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT), dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
 
 		threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
 
-		LOGGER.info("############Starting fetch for thread : {}, url : {}##################################", threadId, url);
-        LOGGER.info("");
+		LOGGER.info("######################################################################################");
+		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId,url);
+		LOGGER.info("######################################################################################", threadId,
+				url);
 
 		String id = Base64.getEncoder().encodeToString(url.getBytes());
 
@@ -170,7 +172,8 @@ public class FetcherJob implements Job {
 				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(result.getContent()));
 
 			} else {
-				LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", result.getCode(), url, result.getMessage());
+				LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", result.getCode(), url,
+						result.getMessage());
 			}
 
 			extractUrl(consumer, url, url, 0l);
@@ -186,14 +189,25 @@ public class FetcherJob implements Job {
 			this.driver.quit();
 		}
 
-		LOGGER.info("##############################Finished Thread {}, for url: {}##########################", threadId, url);
-        LOGGER.info("Downloaded {} documents for the {} job", maxPagesCount,url);
-        LOGGER.info("Excluded : ");
-        LOGGER.info("Links : {} ", encounteredExcludedLinks.size());
-        LOGGER.info("Data : {} ", excludedDataPagesCount);
-		LOGGER.info("##############################END##########################");
+		logJob(url, maxPagesCount, encounteredExcludedLinks, excludedDataPagesCount, urlsForDeletionCount);
 
 	}
+
+
+	private String setLogFileName(String url) {
+		// TODO Auto-generated method stub
+		String logFileName = url.replace("http://europa.eu/", "");
+		logFileName = url.replace("https://europa.eu/", "");
+		logFileName = logFileName.replace("https", "");
+		logFileName = logFileName.replace("http", "");
+		logFileName = logFileName.replace("ec.europa.eu", "");
+		logFileName = logFileName.replace("europa.eu", "");
+		logFileName = logFileName.replace(":", "");
+		logFileName = logFileName.replace(".", "");
+		logFileName = logFileName.replace("/", "");
+		return logFileName;
+	}
+
 
 	private void initializeConnection(String proxyUser, String proxyPass, String proxyHost, Long proxyPort, Boolean disableSSLcheck) {
 
@@ -221,27 +235,26 @@ public class FetcherJob implements Job {
 		if (!disableSSLcheck) {
 
 			TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
-				public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-					return null;
-				}
 
-				public void checkClientTrusted(X509Certificate[] certs, String authType) {
-				}
+	public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+		return null;
+	}
 
-				public void checkServerTrusted(X509Certificate[] certs, String authType) {
-				}
-			} };
+	public void checkClientTrusted(X509Certificate[] certs, String authType) {
+	}
 
-			try {
-				SSLContext sc = SSLContext.getInstance("SSL");
-				sc.init(null, trustAllCerts, new java.security.SecureRandom());
-				HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+	public void checkServerTrusted(X509Certificate[] certs, String authType) {
+	}}};
 
-			} catch (NoSuchAlgorithmException | KeyManagementException e) {
-				LOGGER.error("Failed to set authentication cert trust", e);
-			}
+	try{
 
-			HostnameVerifier allHostsValid = new HostnameVerifier() {
+	SSLContext sc = SSLContext.getInstance(
+			"SSL");sc.init(null,trustAllCerts,new java.security.SecureRandom());HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+
+	}catch(NoSuchAlgorithmException|
+	KeyManagementException e){LOGGER.error("Failed to set authentication cert trust",e);}
+
+	HostnameVerifier allHostsValid = new HostnameVerifier() {
 
 				public boolean verify(String hostname, SSLSession session) {
 					return true;
@@ -250,58 +263,43 @@ public class FetcherJob implements Job {
 
 			HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
 
-		}
-
-		if (this.waitJavascript) {
-
-			if (StringUtils.isEmpty(chromeDriver)) {
-
-				Builder settings = Settings.builder().timezone(Timezone.EUROPE_BRUSSELS)
-						.connectTimeout(this.timeout.intValue())
-						.maxConnections(50)
-						.quickRender(true)
-						.blockMedia(true)
-						.userAgent(UserAgent.CHROME)
-						.logger("ch.qos.logback.core.ConsoleAppender")
-						.processes(2)
-						.loggerLevel(java.util.logging.Level.INFO)
-						.hostnameVerification(false);
-
-				if (proxyUser != null && proxyPass != null && proxyPort != null) {
-
-					ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser, proxyPass);
-					settings.proxy(proxyConfig);
-					settings.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=");
-				}
-
-				driver = new JBrowserDriver(settings.build());
-
-			} else {
-
-				Path chrome = Paths.get(chromeDriver);
-				Boolean isExecutable = chrome.toFile().setExecutable(true);
-
-				if (isExecutable) {
-					LOGGER.info("set {} to be executable", chromeDriver);
-				}
-
-				System.setProperty("webdriver.chrome.driver", chrome.toAbsolutePath().toString());
-
-				ChromeOptions chromeOptions = new ChromeOptions();
-				chromeOptions.addArguments("--headless");
-				chromeOptions.addArguments("--no-sandbox");
-				chromeOptions.addArguments("--disable-dev-shm-usage");
-
-				driver = new ChromeDriver(chromeOptions);
-
-				// https://github.com/seleniumhq/selenium-google-code-issue-archive/issues/27
-				((JavascriptExecutor) driver).executeScript("window.alert = function(msg) { }");
-				((JavascriptExecutor) driver).executeScript("window.confirm = function(msg) { }");
-
-			}
-
-		}
 	}
+
+	if(this.waitJavascript){
+
+	if(StringUtils.isEmpty(chromeDriver)){
+
+	Builder settings = Settings.builder().timezone(Timezone.EUROPE_BRUSSELS).connectTimeout(this.timeout.intValue())
+			.maxConnections(50).quickRender(true).blockMedia(true).userAgent(UserAgent.CHROME)
+			.logger("ch.qos.logback.core.ConsoleAppender").processes(2).loggerLevel(java.util.logging.Level.INFO)
+			.hostnameVerification(false);
+
+	if(proxyUser!=null&&proxyPass!=null&&proxyPort!=null){
+
+	ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser,
+			proxyPass);settings.proxy(proxyConfig);settings.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=");}
+
+	driver=new JBrowserDriver(settings.build());
+
+	}else{
+
+	Path chrome = Paths.get(chromeDriver);
+	Boolean isExecutable = chrome.toFile().setExecutable(true);
+
+	if(isExecutable){LOGGER.info("set {} to be executable",chromeDriver);}
+
+	System.setProperty("webdriver.chrome.driver",chrome.toAbsolutePath().toString());
+
+	ChromeOptions chromeOptions = new ChromeOptions();chromeOptions.addArguments("--headless");chromeOptions.addArguments("--no-sandbox");chromeOptions.addArguments("--disable-dev-shm-usage");
+
+	driver=new ChromeDriver(chromeOptions);
+
+	// https://github.com/seleniumhq/selenium-google-code-issue-archive/issues/27
+	((JavascriptExecutor)driver).executeScript("window.alert = function(msg) { }");((JavascriptExecutor)driver).executeScript("window.confirm = function(msg) { }");
+
+	}
+
+	}}
 
 	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String dataFolder, String id) {
 
@@ -318,7 +316,7 @@ public class FetcherJob implements Job {
 			try {
 				List<String> legacyFile = Arrays.asList(objectMapper.readValue(pathFile.toFile(), String[].class));
 				List<String> urlsForDeletion = legacyFile.stream().filter(l -> !tmpList.contains(l)).collect(Collectors.toList());
-
+                urlsForDeletionCount = urlsForDeletion.size();
 				LOGGER.info("Thread deleting {}, deleting {} urls", threadId, urlsForDeletion.size());
 
 				urlsForDeletion.parallelStream().forEach(url -> {
@@ -517,10 +515,14 @@ public class FetcherJob implements Job {
 			maxPagesCount++;
 			consumer.accept(metadata);
 			LOGGER.info("Accepting URL for further processing : {} - Thread {}, status {}, pages {}, depth {},  message {}, rootUrl {}, size {}, tmpList {}", result.getUrl(), threadId, result.getCode(), maxPagesCount, depth,  result.getMessage(), result.getRootUrl(), metadata.get(METADATA_CONTENT).toString().length(), tmpList.size());
+			LogstashJson jsonLog = new LogstashJson();
+			logToLogstash("addUrl",result.getUrl(),jobName);
+
 
 		} else {
             excludedDataPagesCount++;
 			LOGGER.info("This url is excluded by the excludedDataRegex : url {}, Thread {}, status {}, pages {}, depth {},  message {}, rootUrl {}, size {}, tmpList {}", result.getUrl(),threadId, result.getCode(), maxPagesCount, depth,  result.getMessage(), result.getRootUrl(), result.getContent().length, tmpList.size());
+			logToLogstash("exludeUrl",result.getUrl(),jobName);
 		}
 
 		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
@@ -534,18 +536,15 @@ public class FetcherJob implements Job {
 
 	}
 
-    private boolean logMatch (String string, String regex){
-        if (string.matches(regex)){
-            LOGGER.debug("excludLinkRegex match : {}", string);
-            encounteredExcludedLinks.add(string);
-            return true;
-        } else {
-            return false;
-        }
-    }
-
-        
-
+	private boolean logMatch(String string, String regex) {
+		if (string.matches(regex)) {
+			LOGGER.debug("excludLinkRegex match : {}", string);
+			encounteredExcludedLinks.add(string);
+			return true;
+		} else {
+			return false;
+		}
+	}
 
 	private String getUrlString(String urlString, String rootUrl) throws MalformedURLException {
 
@@ -621,6 +620,37 @@ public class FetcherJob implements Job {
 		}
 
 		return urlString;
+	}
+
+	private void logToLogstash(String method, String url, String jobName) {
+		LogstashJson jsonLog = new LogstashJson();
+		jsonLog.setMethod(method);
+		jsonLog.setUrl(url);
+		jsonLog.setJob(jobName);
+		 try {
+	            String log = objectMapper.writeValueAsString(jsonLog);
+	            LOGSTASH_LOGGER.info(log);
+	        } catch (JsonProcessingException e) {
+	            LOGGER.error("Failed to send json to logstash", e);
+	        }
+	}
+	
+	private void logJob(String url, Long maxPagesCount, Set encounteredExcludedLinks, Long excludedDataPagesCount,
+			int urlsForDeletionCount) {
+		LOGGER.info(
+				"#############################################################################################################################");
+		LOGGER.info("Finished Thread {}, for url: {}", threadId, url);
+		LOGGER.info("Analysed {} documents",
+				maxPagesCount + encounteredExcludedLinks.size() + excludedDataPagesCount);
+		LOGGER.info("                              Downloaded {} documents", maxPagesCount);
+		LOGGER.info("                              Excluded: ");
+		LOGGER.info("                                  Links: {} ", encounteredExcludedLinks.size());
+		LOGGER.info("                                  Data: {} ", excludedDataPagesCount);
+		LOGGER.info("                              Deleted: ");
+		LOGGER.info("                                  Old urls : {} ", urlsForDeletionCount);
+		LOGGER.info(
+				"#######################################################END####################################################################");
+		
 	}
 
 }
