@@ -73,8 +73,6 @@ import eu.wajja.web.fetcher.model.Result;
 public class FetcherJob implements Job {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger("general");
-	private static final Logger EXCLUDED_LINKS_LOGGER = LoggerFactory.getLogger("excludedLinks");
-	private static final Logger EXCLUDED_DATA_LOGGER = LoggerFactory.getLogger("excludedData");
 	private static final Logger LOGSTASH_LOGGER = LoggerFactory.getLogger("logstashLogger");
 
 	private static final String METADATA_EPOCH = "epochSecond";
@@ -521,7 +519,7 @@ public class FetcherJob implements Job {
 
 		} else {
             excludedDataPagesCount++;
-			LOGGER.info("This url is excluded by the excludedDataRegex : url {}, Thread {}, status {}, pages {}, depth {},  message {}, rootUrl {}, size {}, tmpList {}", result.getUrl(),threadId, result.getCode(), maxPagesCount, depth,  result.getMessage(), result.getRootUrl(), result.getContent().length, tmpList.size());
+			LOGGER.debug("This url is excluded by the excludedDataRegex : url {}, Thread {}, status {}, pages {}, depth {},  message {}, rootUrl {}, size {}, tmpList {}", result.getUrl(),threadId, result.getCode(), maxPagesCount, depth,  result.getMessage(), result.getRootUrl(), result.getContent().length, tmpList.size());
 			logToLogstash("exludeUrl",result.getUrl(),jobName);
 		}
 
