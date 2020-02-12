@@ -11,7 +11,7 @@
 		<!-- We will assign a value to 'logFileName' via Java code -->
 		<discriminator>
 			<key>logFileName</key>
-			<defaultValue>head0</defaultValue>
+			<defaultValue>logstash-input-webfetcher</defaultValue>
 		</discriminator>
 
 		<sift>

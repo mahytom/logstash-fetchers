@@ -120,7 +120,7 @@ public class FetcherJob implements Job {
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
 		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
 		String url = dataMap.getString(WebFetcher.PROPERTY_URL);
-		String logFileName = setLogFileName(url);
+		String logFileName = dataMap.getString(WebFetcher.PROPERTY_LOG_FILE_NAME);
 		jobName = logFileName;
 		MDC.put("logFileName", logFileName);
 
@@ -179,18 +179,6 @@ public class FetcherJob implements Job {
 
 	}
 
-	private String setLogFileName(String url) {
-		String logFileName = url.replace("http://europa.eu/", "");
-		logFileName = url.replace("https://europa.eu/", "");
-		logFileName = logFileName.replace("https", "");
-		logFileName = logFileName.replace("http", "");
-		logFileName = logFileName.replace("ec.europa.eu", "");
-		logFileName = logFileName.replace("europa.eu", "");
-		logFileName = logFileName.replace(":", "");
-		logFileName = logFileName.replace(".", "");
-		logFileName = logFileName.replace("/", "");
-		return logFileName;
-	}
 
 	private void initializeConnection(String proxyUser, String proxyPass, String proxyHost, Long proxyPort, Boolean disableSSLcheck) {
 
