@@ -126,7 +126,7 @@ public class WebFetcher implements Input {
 
 		this.threadId = id;
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
-		// this.cron = config.get(CONFIG_CRON);
+	 this.cron = config.get(CONFIG_CRON);
 
 	}
 
