@@ -102,7 +102,6 @@ public class FetcherJob implements Job {
 	private String crawlerUserAgent;
 	private String crawlerReferer;
 	private Long maxPagesCount = 0l;
-	// private Long excludedLinkPagesCount = 0l;
 	private Set encounteredExcludedLinks;
 	private Long excludedDataPagesCount = 0l;
 	private int urlsForDeletionCount = 0;
@@ -123,8 +122,6 @@ public class FetcherJob implements Job {
 		String url = dataMap.getString(WebFetcher.PROPERTY_URL);
 		String logFileName = setLogFileName(url);
 		jobName = logFileName;
-		// MDC.put("logFileNameLinks",logFileName+"_excludedLinks");
-		// MDC.put("logFileNameData",logFileName+"_excludedData");
 		MDC.put("logFileName", logFileName);
 
 		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
@@ -183,7 +180,6 @@ public class FetcherJob implements Job {
 	}
 
 	private String setLogFileName(String url) {
-		// TODO Auto-generated method stub
 		String logFileName = url.replace("http://europa.eu/", "");
 		logFileName = url.replace("https://europa.eu/", "");
 		logFileName = logFileName.replace("https", "");

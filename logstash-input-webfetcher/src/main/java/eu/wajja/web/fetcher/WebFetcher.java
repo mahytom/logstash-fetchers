@@ -59,6 +59,7 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_CHROME_DRIVER = "chromeDriver";
 	protected static final String PROPERTY_CRAWLER_USER_AGENT = "crawlerUserAgent";
 	protected static final String PROPERTY_CRAWLER_REFERER = "crawlerReferer";
+	protected static final String PROPERTY_LOG_FILE_NAME = "logFileName";
 
 	public static final String GROUP_NAME = "group001";
 
@@ -81,6 +82,7 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<String> CONFIG_CHROME_DRIVER = PluginConfigSpec.stringSetting(PROPERTY_CHROME_DRIVER, null, false, false);
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_USER_AGENT = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_USER_AGENT, "Wajja Crawler");
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_REFERER = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_REFERER, "http://wajja.eu/");
+	public static final PluginConfigSpec<String> LOG_FILE_NAME = PluginConfigSpec.stringSetting(PROPERTY_LOG_FILE_NAME);
 
 	private final CountDownLatch done = new CountDownLatch(1);
 	protected volatile boolean stopped;
@@ -120,6 +122,7 @@ public class WebFetcher implements Input {
 		jobDataMap.put(PROPERTY_PROXY_PORT, config.get(CONFIG_PROXY_PORT));
 		jobDataMap.put(PROPERTY_PROXY_USER, config.get(CONFIG_PROXY_USER));
 		jobDataMap.put(PROPERTY_PROXY_PASS, config.get(CONFIG_PROXY_PASS));
+		jobDataMap.put(PROPERTY_LOG_FILE_NAME, config.get(LOG_FILE_NAME));
 
 		this.threadId = id;
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
