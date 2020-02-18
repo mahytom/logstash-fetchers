@@ -1,4 +1,4 @@
-package eu.wajja.web.fetcher;
+package eu.wajja.web.fetcher.config;
 
 import org.quartz.Scheduler;
 import org.quartz.SchedulerException;
@@ -12,7 +12,7 @@ public class SchedulerBuilder {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(SchedulerBuilder.class);
 
-	private static final String DEFAULT_INSTANCE_ID = "LOGSTASH_INGESTION";
+	private static final String DEFAULT_INSTANCE_ID = "LOGSTASH_WEB_FETCHER";
 	private static Scheduler scheduler;
 
 	public static Scheduler getScheduler() {

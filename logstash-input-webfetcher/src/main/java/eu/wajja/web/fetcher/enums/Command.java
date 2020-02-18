@@ -1,4 +1,4 @@
-package eu.wajja.web.fetcher;
+package eu.wajja.web.fetcher.enums;
 
 public enum Command {
 
