@@ -126,7 +126,7 @@ public class WebFetcher implements Input {
 
 		this.threadId = id;
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
-	 this.cron = config.get(CONFIG_CRON);
+        this.cron = config.get(CONFIG_CRON);
 
 	}
 
@@ -143,9 +143,14 @@ public class WebFetcher implements Input {
 
 				String uuid = UUID.randomUUID().toString();
 
-				JobDetail job = JobBuilder.newJob(FetcherJob.class).withIdentity(uuid, GROUP_NAME).setJobData(newJobDataMap).build();
+				JobDetail job = JobBuilder.newJob(FetcherJob.class)
+				        .withIdentity(uuid, GROUP_NAME)
+				        .setJobData(newJobDataMap)
+				        .build();
 
-				Trigger trigger = TriggerBuilder.newTrigger().withIdentity(uuid, GROUP_NAME).startNow()
+				Trigger trigger = TriggerBuilder.newTrigger()
+				        .withIdentity(uuid, GROUP_NAME)
+				        .startNow()
 						.withSchedule(CronScheduleBuilder.cronSchedule(this.cron))
 						.build();
 
@@ -184,8 +189,25 @@ public class WebFetcher implements Input {
 	 */
 	@Override
 	public Collection<PluginConfigSpec<?>> configSchema() {
-		return Arrays.asList(CONFIG_URLS, CONFIG_DATA_FOLDER, CONFIG_DISABLE_SSL_CHECK, CONFIG_EXCLUDE_DATA, CONFIG_EXCLUDE_LINK, CONFIG_REFRESH_INTERVAL, CONFIG_PROXY_HOST, CONFIG_PROXY_PASS, CONFIG_PROXY_PORT, CONFIG_PROXY_USER, CONFIG_MAX_DEPTH, CONFIG_TIMEOUT, CONFIG_MAX_PAGES,
-				CONFIG_WAIT_JAVASCRIPT, CONFIG_CRON, CONFIG_THREADS, CONFIG_CRAWLER_REFERER, CONFIG_CRAWLER_USER_AGENT, CONFIG_CHROME_DRIVER);
+		return Arrays.asList(CONFIG_URLS,
+		                CONFIG_DATA_FOLDER,
+		                CONFIG_DISABLE_SSL_CHECK,
+		                CONFIG_EXCLUDE_DATA, 
+		                CONFIG_EXCLUDE_LINK, 
+		                CONFIG_REFRESH_INTERVAL,
+		                CONFIG_PROXY_HOST, 
+		                CONFIG_PROXY_PASS,
+		                CONFIG_PROXY_PORT,
+		                CONFIG_PROXY_USER,
+		                CONFIG_MAX_DEPTH,
+		                CONFIG_TIMEOUT,
+		                CONFIG_MAX_PAGES,
+				        CONFIG_WAIT_JAVASCRIPT,
+				        CONFIG_CRON,
+				        CONFIG_THREADS,
+				        CONFIG_CRAWLER_REFERER, 
+				        CONFIG_CRAWLER_USER_AGENT, 
+				        CONFIG_CHROME_DRIVER);
 	}
 
 	@Override
