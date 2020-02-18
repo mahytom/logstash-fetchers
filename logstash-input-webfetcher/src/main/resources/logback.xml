@@ -57,18 +57,21 @@
 		</layout>
 	</appender>
 
-	<if condition='isDefined("elk.destination")'>
+	<if condition='isDefined("logForKibana")'>
 		<then>
 
 			<appender name="LOGSTASH"
-				class="net.logstash.logback.appender.LogstashTcpSocketAppender">
-				<destination>${elk.destination}</destination>
+				class="ch.qos.logback.core.rolling.RollingFileAppender">
+				<file>${USER_HOME}/filebeat.log</file>
 				<encoder
-					class="net.logstash.logback.encoder.LogstashEncoder">
-					<customFields>{"appContext":"logstash-input-webfetcher"}
-					</customFields>
+					class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
+					<Pattern>
+						%d{yyyy-MM-dd HH:mm:ss} [%thread] %level %logger{35}
+						- %msg%n
+					</Pattern>
 				</encoder>
-			</appender>
+	</appender>
+
 
 
 			<logger name="logstashLogger" level="all" additivity="false">
