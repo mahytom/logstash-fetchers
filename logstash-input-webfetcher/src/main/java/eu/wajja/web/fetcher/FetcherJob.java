@@ -1,22 +1,12 @@
 package eu.wajja.web.fetcher;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.net.Authenticator;
-import java.net.HttpURLConnection;
-import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
-import java.net.PasswordAuthentication;
-import java.net.Proxy;
-import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.security.KeyManagementException;
-import java.security.NoSuchAlgorithmException;
-import java.security.cert.X509Certificate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -27,25 +17,20 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Scanner;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-
-import javax.net.ssl.HostnameVerifier;
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLSession;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.select.Elements;
-import org.openqa.selenium.JavascriptExecutor;
-import org.openqa.selenium.WebDriver;
-import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeOptions;
 import org.quartz.DisallowConcurrentExecution;
 import org.quartz.Job;
 import org.quartz.JobDataMap;
@@ -55,14 +40,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.machinepublishers.jbrowserdriver.JBrowserDriver;
-import com.machinepublishers.jbrowserdriver.ProxyConfig;
-import com.machinepublishers.jbrowserdriver.ProxyConfig.Type;
-import com.machinepublishers.jbrowserdriver.Settings;
-import com.machinepublishers.jbrowserdriver.Settings.Builder;
-import com.machinepublishers.jbrowserdriver.Timezone;
-import com.machinepublishers.jbrowserdriver.UserAgent;
 
+import eu.wajja.web.fetcher.controller.ProxyController;
+import eu.wajja.web.fetcher.controller.URLController;
+import eu.wajja.web.fetcher.enums.Command;
 import eu.wajja.web.fetcher.model.Result;
 
 @DisallowConcurrentExecution
@@ -83,244 +64,174 @@ public class FetcherJob implements Job {
 
 	private static final String HTTP = "http://";
 	private static final String HTTPS = "https://";
-	private static final String ROBOT = "robot.txt";
+	private static final String ROBOTS = "robots.txt";
 
 	private ObjectMapper objectMapper = new ObjectMapper();
+	private URLController urlController;
+	private ProxyController proxyController;
+	private ThreadPoolExecutor executorService;
 
 	private Long maxDepth;
 	private Long maxPages;
-	private Long timeout;
 	private Boolean waitJavascript;
 	private List<String> excludedDataRegex;
 	private List<String> excludedLinkRegex;
-	private String chromeDriver;
-	private String crawlerUserAgent;
-	private String crawlerReferer;
 	private Long maxPagesCount = 0l;
-	private Long threads;
-	private Proxy proxy = null;
-	private WebDriver driver;
 	private String threadId;
+	private String crawlerUserAgent;
 
 	private List<String> tmpList = new ArrayList<>();
+	protected Map<String, Set<String>> disallowedLocations = new HashMap<>();
+	protected Map<String, Set<String>> allowedLocations = new HashMap<>();
+	protected Map<String, Set<String>> sitemapLocations = new HashMap<>();
 
+	@SuppressWarnings("unchecked")
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
 
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
 		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
-		String url = dataMap.getString(WebFetcher.PROPERTY_URL);
+		String initialUrl = dataMap.getString(WebFetcher.PROPERTY_URL);
 
 		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
+		Boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
+		Long threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
+
+		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
 
 		this.maxDepth = dataMap.getLong(WebFetcher.PROPERTY_MAX_DEPTH);
 		this.maxPages = dataMap.getLong(WebFetcher.PROPERTY_MAX_PAGES);
-		this.timeout = dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT);
-		this.chromeDriver = dataMap.getString(WebFetcher.PROPERTY_CHROME_DRIVER);
 		this.threadId = dataMap.getString(WebFetcher.PROPERTY_THREAD_ID);
 		this.waitJavascript = dataMap.getBoolean(WebFetcher.PROPERTY_JAVASCRIPT);
-		this.excludedDataRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, new ArrayList<>());
-		this.excludedLinkRegex = (List<String>) dataMap.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, new ArrayList<>());
+		this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
+		this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
 		this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
-		this.crawlerReferer = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_REFERER);
 
-		initializeConnection(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
-				dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
-				dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
-				dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
-				dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
+		if (proxyController == null) {
 
-		threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
+			proxyController = new ProxyController(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
+					dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
+					dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
+					dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
+					dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK),
+					dataMap.getString(WebFetcher.PROPERTY_CHROME_DRIVER),
+					dataMap.getBoolean(WebFetcher.PROPERTY_JAVASCRIPT),
+					dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT));
+		}
 
-		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, url);
+		if (urlController == null) {
 
-		String id = Base64.getEncoder().encodeToString(url.getBytes());
+			urlController = new URLController(
+					proxyController.getProxy(),
+					dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT),
+					dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT),
+					dataMap.getString(WebFetcher.PROPERTY_CRAWLER_REFERER));
 
-		try {
+		}
 
-			URL robotUrl = new URL(url + "/" + ROBOT);
-			Result result = getURL(robotUrl, url, proxy, timeout, maxPagesCount, 1l, crawlerUserAgent, crawlerReferer);
+		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
 
-			if (result.getContent() != null) {
+		String id = Base64.getEncoder().encodeToString(initialUrl.getBytes());
 
-				Map<String, Object> metadata = new HashMap<>();
-				metadata.put(METADATA_REFERENCE, ROBOT);
-				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(result.getContent()));
+		// Read the robot.txt first
+
+		if (readRobot) {
+
+			Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
+			Matcher m = p.matcher(initialUrl);
+
+			if (m.find()) {
+				String robotUrl = m.group(0) + ROBOTS;
+				readRobot(initialUrl, robotUrl);
 
 			} else {
-				LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", result.getCode(), url, result.getMessage());
+				LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
 			}
 
-			extractUrl(consumer, url, url, 0l);
-			deleteOldDocuments(consumer, dataFolder, id);
-
-		} catch (Exception e) {
-			LOGGER.error("Failed to read robot", e);
-
 		}
 
-		if (this.waitJavascript) {
-			LOGGER.info("Closing driver {}", url);
-			this.driver.quit();
+		// Extract the site content
+		extractUrl(consumer, initialUrl, initialUrl, 0l);
+
+		while (executorService.getActiveCount() > 0) {
+
+			try {
+				Thread.sleep(5000);
+			} catch (InterruptedException e) {
+				LOGGER.error("Failed to sleep in thread", e);
+				Thread.currentThread().interrupt();
+			}
 		}
+
+		// Compare to previously extracted content and delete delta
+		deleteOldDocuments(consumer, dataFolder, id);
+
+		// Close all proxy connections
+		proxyController.close();
 
 		LOGGER.info("Finished Thread {}", threadId);
 
 	}
 
-	private void initializeConnection(String proxyUser, String proxyPass, String proxyHost, Long proxyPort, Boolean disableSSLcheck) {
+	private void readRobot(String initialUrl, String robotUrl) {
 
-		if (proxyUser != null && proxyPass != null) {
+		Result result = urlController.getURL(robotUrl, initialUrl);
 
-			LOGGER.info("Initializing Proxy Security {}:{}", proxyHost, proxyPort);
-			Authenticator authenticator = new Authenticator() {
+		if (result.getContent() != null) {
 
-				@Override
-				public PasswordAuthentication getPasswordAuthentication() {
+			try (Scanner scanner = new Scanner(IOUtils.toString(result.getContent(), StandardCharsets.UTF_8.name()))) {
 
-					return new PasswordAuthentication(proxyUser, proxyPass.toCharArray());
+				String userAgent = "*";
+
+				while (scanner.hasNextLine()) {
+
+					String line = scanner.nextLine().trim();
+
+					if (!line.startsWith("#") && !line.isEmpty()) {
+
+						if (line.startsWith("User-agent:")) {
+							userAgent = line.replace("User-agent:", "").trim();
+
+						} else if (line.startsWith("Disallow:")) {
+
+							String perm = line.replace("Disallow:", "").trim();
+
+							if (!disallowedLocations.containsKey(userAgent)) {
+								disallowedLocations.put(userAgent, new HashSet<>());
+							}
+
+							disallowedLocations.get(userAgent).add(perm);
+
+						} else if (line.startsWith("Allow:")) {
+
+							String perm = line.replace("Allow:", "").trim();
+
+							if (!allowedLocations.containsKey(userAgent)) {
+								allowedLocations.put(userAgent, new HashSet<>());
+							}
+
+							allowedLocations.get(userAgent).add(perm);
+
+						} else if (line.startsWith("Sitemap:")) {
+
+							String perm = line.replace("Sitemap:", "").trim();
+
+							if (!sitemapLocations.containsKey(userAgent)) {
+								sitemapLocations.put(userAgent, new HashSet<>());
+							}
+
+							sitemapLocations.get(userAgent).add(perm);
+						}
+					}
 				}
-			};
 
-			Authenticator.setDefault(authenticator);
-		}
-
-		if (proxyHost != null && proxyPort != null) {
-
-			LOGGER.info("Initializing Proxy {}:{}", proxyHost, proxyPort);
-			proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort.intValue()));
-		}
-
-		if (!disableSSLcheck) {
-
-			TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
-				public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-					return null;
-				}
-
-				public void checkClientTrusted(X509Certificate[] certs, String authType) {
-				}
-
-				public void checkServerTrusted(X509Certificate[] certs, String authType) {
-				}
-			} };
-
-			try {
-				SSLContext sc = SSLContext.getInstance("SSL");
-				sc.init(null, trustAllCerts, new java.security.SecureRandom());
-				HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
-
-			} catch (NoSuchAlgorithmException | KeyManagementException e) {
-				LOGGER.error("Failed to set authentication cert trust", e);
+			} catch (Exception e) {
+				LOGGER.error("Failed to parse robots.txt from url {}", robotUrl, e);
 			}
 
-			HostnameVerifier allHostsValid = new HostnameVerifier() {
-
-				public boolean verify(String hostname, SSLSession session) {
-					return true;
-				}
-			};
-
-			HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
-
+		} else {
+			LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", result.getCode(), initialUrl, result.getMessage());
 		}
-
-		if (this.waitJavascript) {
-
-			if (StringUtils.isEmpty(chromeDriver)) {
-
-				Builder settings = Settings.builder().timezone(Timezone.EUROPE_BRUSSELS)
-						.connectTimeout(this.timeout.intValue())
-						.maxConnections(50)
-						.quickRender(true)
-						.blockMedia(true)
-						.userAgent(UserAgent.CHROME)
-						.logger("ch.qos.logback.core.ConsoleAppender")
-						.processes(2)
-						.loggerLevel(java.util.logging.Level.INFO)
-						.hostnameVerification(false);
-
-				if (proxyUser != null && proxyPass != null && proxyPort != null) {
-
-					ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser, proxyPass);
-					settings.proxy(proxyConfig);
-					settings.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=");
-				}
-
-				driver = new JBrowserDriver(settings.build());
-
-			} else {
-
-				Path chrome = Paths.get(chromeDriver);
-				Boolean isExecutable = chrome.toFile().setExecutable(true);
-
-				if (isExecutable) {
-					LOGGER.info("set {} to be executable", chromeDriver);
-				}
-
-				System.setProperty("webdriver.chrome.driver", chrome.toAbsolutePath().toString());
-
-				ChromeOptions chromeOptions = new ChromeOptions();
-				chromeOptions.addArguments("--headless");
-				chromeOptions.addArguments("--no-sandbox");
-				chromeOptions.addArguments("--disable-dev-shm-usage");
-
-				driver = new ChromeDriver(chromeOptions);
-
-				// https://github.com/seleniumhq/selenium-google-code-issue-archive/issues/27
-				((JavascriptExecutor) driver).executeScript("window.alert = function(msg) { }");
-				((JavascriptExecutor) driver).executeScript("window.confirm = function(msg) { }");
-
-			}
-
-		}
-	}
-
-	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String dataFolder, String id) {
-
-		Path indexPath = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).toString());
-
-		if (!indexPath.toFile().exists()) {
-			indexPath.toFile().mkdirs();
-		}
-
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_tmp.txt").toString());
-
-		if (pathFile.toFile().exists()) {
-
-			try {
-				List<String> legacyFile = Arrays.asList(objectMapper.readValue(pathFile.toFile(), String[].class));
-				List<String> urlsForDeletion = legacyFile.stream().filter(l -> !tmpList.contains(l)).collect(Collectors.toList());
-
-				LOGGER.info("Thread deleting {}, deleting {} urls", threadId, urlsForDeletion.size());
-
-				urlsForDeletion.parallelStream().forEach(url -> {
-
-					String reference = Base64.getEncoder().encodeToString(url.getBytes());
-					LOGGER.info("Thread Sending Deletion {} , reference {}", threadId, reference);
-
-					Map<String, Object> metadata = new HashMap<>();
-					metadata.put(METADATA_REFERENCE, reference);
-					metadata.put(METADATA_COMMAND, Command.DELETE.toString());
-
-					consumer.accept(metadata);
-
-				});
-
-				Files.delete(pathFile);
-
-			} catch (IOException e) {
-				LOGGER.warn("Failed to read legacy file", e);
-			}
-		}
-
-		try {
-			String json = objectMapper.writeValueAsString(tmpList);
-			Files.write(pathFile, json.getBytes());
-		} catch (IOException e) {
-			LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);
-		}
-
 	}
 
 	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth) {
@@ -339,15 +250,38 @@ public class FetcherJob implements Job {
 			if (tmpList.contains(urlString)) {
 				return;
 			} else {
+
 				tmpList.add(urlString);
+
+				Set<String> disallowedList = new HashSet<>();
+
+				if (disallowedLocations.containsKey("*")) {
+					disallowedList = disallowedLocations.get("*");
+				}
+
+				if (disallowedLocations.containsKey(crawlerUserAgent)) {
+					disallowedList.addAll(disallowedLocations.get(crawlerUserAgent));
+				}
+
+				if (!disallowedList.isEmpty()) {
+
+					String regex = (".*(" + String.join(")|(", disallowedList).replace("*", ".*").replace("/", "\\/") + ").*").trim();
+					Pattern p = Pattern.compile(regex);
+					Matcher m = p.matcher(urlString);
+
+					if (m.find()) {
+						return;
+					}
+				}
+
 			}
 
-			Result result = getURL(new URL(urlString), rootUrl, proxy, timeout, maxPagesCount, depth, this.crawlerUserAgent, this.crawlerReferer);
+			Result result = urlController.getURL(urlString, rootUrl);
 
-			if (result.getContent() != null) {
+			if (result != null && result.getContent() != null) {
 
 				List<String> childPages = extractContent(consumer, result, uuid, depth);
-				Optional.ofNullable(childPages).orElse(new ArrayList<>()).stream().forEach(childUrl -> extractUrl(consumer, childUrl, result.getRootUrl(), depth + 1));
+				Optional.ofNullable(childPages).orElse(new ArrayList<>()).stream().forEach(childUrl -> executorService.execute(() -> extractUrl(consumer, childUrl, result.getRootUrl(), depth + 1)));
 
 			}
 
@@ -355,82 +289,6 @@ public class FetcherJob implements Job {
 			LOGGER.error("Failed to retrieve URL from thread {}, url {}", threadId, urlString, e);
 		}
 
-	}
-
-	public static Result getURL(URL url, String rootUrl, Proxy proxy, Long timeout, Long maxPagesCount, Long depth, String userAgent, String referer) {
-
-		HttpURLConnection httpURLConnection = null;
-		Result result = new Result();
-
-		try {
-
-			if (proxy == null) {
-				httpURLConnection = (HttpURLConnection) url.openConnection();
-			} else {
-				httpURLConnection = (HttpURLConnection) url.openConnection(proxy);
-			}
-
-			httpURLConnection.setConnectTimeout(timeout.intValue());
-			httpURLConnection.setReadTimeout(timeout.intValue());
-			httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
-			httpURLConnection.addRequestProperty("User-Agent", userAgent);
-			httpURLConnection.addRequestProperty("Referer", referer);
-
-			httpURLConnection.connect();
-
-			int code = httpURLConnection.getResponseCode();
-			String message = httpURLConnection.getResponseMessage();
-			result.setCode(code);
-			result.setMessage(message);
-			result.setUrl(url.toString());
-			result.setRootUrl(rootUrl);
-
-			if (code == HttpURLConnection.HTTP_OK) {
-
-				InputStream inputStream = httpURLConnection.getInputStream();
-				byte[] content = IOUtils.toByteArray(inputStream);
-
-				result.setContent(content);
-				result.setHeaders(httpURLConnection.getHeaderFields());
-
-			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_SEE_OTHER) {
-
-				String newUrl = httpURLConnection.getHeaderField("Location");
-
-				if (!newUrl.startsWith(rootUrl)) {
-					LOGGER.debug("Not redirecting to external url  {}", newUrl);
-				} else {
-					LOGGER.debug("Redirect needed to :  {}", newUrl);
-					return getURL(new URL(newUrl), rootUrl, proxy, timeout, maxPagesCount, depth, userAgent, referer);
-				}
-
-			} else {
-				LOGGER.warn("Failed To Read status {}, pages {}, depth {}, url {}, message {}", code, maxPagesCount, depth, url, message);
-			}
-
-		} catch (SocketTimeoutException e) {
-
-			LOGGER.warn("Thread url {}, sleeping and trying again", url);
-
-			try {
-
-				Thread.sleep(3000);
-				return getURL(url, rootUrl, proxy, timeout, maxPagesCount, depth, userAgent, referer);
-
-			} catch (InterruptedException e1) {
-				Thread.currentThread().interrupt();
-			}
-
-		} catch (Exception e) {
-			LOGGER.error("Failed to retrieve URL url {}", url.toString(), e);
-		} finally {
-
-			if (httpURLConnection != null) {
-				httpURLConnection.disconnect();
-			}
-		}
-
-		return result;
 	}
 
 	@SuppressWarnings("unchecked")
@@ -457,8 +315,8 @@ public class FetcherJob implements Job {
 
 			if (waitJavascript) {
 
-				driver.get(result.getUrl());
-				bodyHtml = driver.getPageSource();
+				proxyController.getDriver().get(result.getUrl());
+				bodyHtml = proxyController.getDriver().getPageSource();
 
 				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bodyHtml.getBytes()));
 
@@ -582,4 +440,54 @@ public class FetcherJob implements Job {
 		return urlString;
 	}
 
+	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String dataFolder, String id) {
+
+		if (dataFolder == null) {
+			return;
+		}
+
+		Path indexPath = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).toString());
+
+		if (!indexPath.toFile().exists()) {
+			indexPath.toFile().mkdirs();
+		}
+
+		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_tmp.txt").toString());
+
+		if (pathFile.toFile().exists()) {
+
+			try {
+				List<String> legacyFile = Arrays.asList(objectMapper.readValue(pathFile.toFile(), String[].class));
+				List<String> urlsForDeletion = legacyFile.stream().filter(l -> !tmpList.contains(l)).collect(Collectors.toList());
+
+				LOGGER.info("Thread deleting {}, deleting {} urls", threadId, urlsForDeletion.size());
+
+				urlsForDeletion.parallelStream().forEach(url -> {
+
+					String reference = Base64.getEncoder().encodeToString(url.getBytes());
+					LOGGER.info("Thread Sending Deletion {} , reference {}", threadId, reference);
+
+					Map<String, Object> metadata = new HashMap<>();
+					metadata.put(METADATA_REFERENCE, reference);
+					metadata.put(METADATA_COMMAND, Command.DELETE.toString());
+
+					consumer.accept(metadata);
+
+				});
+
+				Files.delete(pathFile);
+
+			} catch (IOException e) {
+				LOGGER.warn("Failed to read legacy file", e);
+			}
+		}
+
+		try {
+			String json = objectMapper.writeValueAsString(tmpList);
+			Files.write(pathFile, json.getBytes());
+		} catch (IOException e) {
+			LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);
+		}
+
+	}
 }

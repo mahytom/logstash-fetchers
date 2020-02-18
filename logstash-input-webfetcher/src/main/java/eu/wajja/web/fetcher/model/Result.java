@@ -1,5 +1,6 @@
 package eu.wajja.web.fetcher.model;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -10,7 +11,7 @@ public class Result {
 	private Integer code;
 	private String message;
 	private byte[] content;
-	private Map<String, List<String>> headers;
+	private Map<String, List<String>> headers = new HashMap<>();
 
 	public String getUrl() {
 		return url;
