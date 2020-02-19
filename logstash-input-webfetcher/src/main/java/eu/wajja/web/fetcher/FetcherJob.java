@@ -45,6 +45,7 @@ import eu.wajja.web.fetcher.controller.ProxyController;
 import eu.wajja.web.fetcher.controller.URLController;
 import eu.wajja.web.fetcher.enums.Command;
 import eu.wajja.web.fetcher.model.Result;
+import net.logstash.logback.marker.Markers;
 
 @DisallowConcurrentExecution
 public class FetcherJob implements Job {
@@ -343,15 +344,27 @@ public class FetcherJob implements Job {
 
 		}
 
+		Map<String, Object> loggerMap = new HashMap<>();
+		loggerMap.put("thread", threadId);
+		loggerMap.put("status", result.getCode());
+		loggerMap.put("pages", maxPagesCount);
+		loggerMap.put("depth", depth);
+		loggerMap.put("url", result.getUrl());
+		loggerMap.put("message", result.getMessage());
+		loggerMap.put("rootUrl", result.getRootUrl());
+		loggerMap.put("size", result.getContent().length);
+
 		if (excludedDataRegex.stream().noneMatch(ex -> result.getUrl().matches(ex))) {
 
 			maxPagesCount++;
 			consumer.accept(metadata);
-			LOGGER.info("Thread {}, status {}, pages {}, depth {}, url {}, message {}, rootUrl {}, size {}, tmpList {}", threadId, result.getCode(), maxPagesCount, depth, result.getUrl(), result.getMessage(), result.getRootUrl(), metadata.get(METADATA_CONTENT).toString().length(), tmpList.size());
+			loggerMap.put("action", "include_data");
 
 		} else {
-			LOGGER.info("Excluded Thread {}, status {}, pages {}, depth {}, url {}, message {}, rootUrl {}, size {}, tmpList {}", threadId, result.getCode(), maxPagesCount, depth, result.getUrl(), result.getMessage(), result.getRootUrl(), result.getContent().length, tmpList.size());
+			loggerMap.put("action", "exclude_data");
 		}
+
+		LOGGER.info(Markers.appendEntries(loggerMap), "tracking");
 
 		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
 		Long newDepth = depth + 1;
