@@ -45,6 +45,7 @@ import eu.wajja.web.fetcher.controller.ProxyController;
 import eu.wajja.web.fetcher.controller.URLController;
 import eu.wajja.web.fetcher.enums.Command;
 import eu.wajja.web.fetcher.model.Result;
+import net.logstash.logback.marker.Markers;
 
 @DisallowConcurrentExecution
 public class FetcherJob implements Job {
@@ -62,6 +63,17 @@ public class FetcherJob implements Job {
 	private static final String METADATA_EXTERNAL = "externalPages";
 	private static final String METADATA_COMMAND = "command";
 
+	private static final String LOGGER_THREAD = "thread";
+	private static final String LOGGER_FIREID = "fireId";
+	private static final String LOGGER_STATUS = "status";
+	private static final String LOGGER_PAGES = "pages";
+	private static final String LOGGER_DEPTH = "depth";
+	private static final String LOGGER_URL = "url";
+	private static final String LOGGER_MESSAGE = "message";
+	private static final String LOGGER_ROOT_URL = "rootUrl";
+	private static final String LOGGER_SIZE = "size";
+	private static final String LOGGER_ACTION = "action";
+
 	private static final String HTTP = "http://";
 	private static final String HTTPS = "https://";
 	private static final String ROBOTS = "robots.txt";
@@ -78,6 +90,7 @@ public class FetcherJob implements Job {
 	private List<String> excludedLinkRegex;
 	private Long maxPagesCount = 0l;
 	private String threadId;
+	private String fireId;
 	private String crawlerUserAgent;
 
 	private List<String> tmpList = new ArrayList<>();
@@ -99,6 +112,7 @@ public class FetcherJob implements Job {
 
 		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
 
+		this.fireId = context.getFireInstanceId();
 		this.maxDepth = dataMap.getLong(WebFetcher.PROPERTY_MAX_DEPTH);
 		this.maxPages = dataMap.getLong(WebFetcher.PROPERTY_MAX_PAGES);
 		this.threadId = dataMap.getString(WebFetcher.PROPERTY_THREAD_ID);
@@ -309,6 +323,18 @@ public class FetcherJob implements Job {
 
 		headers.entrySet().stream().filter(entry -> entry.getKey() != null).forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
 
+		Map<String, Object> loggerMap = new HashMap<>();
+
+		loggerMap.put(LOGGER_THREAD, this.threadId);
+		loggerMap.put(LOGGER_FIREID, this.fireId);
+		loggerMap.put(LOGGER_STATUS, result.getCode());
+		loggerMap.put(LOGGER_PAGES, maxPagesCount);
+		loggerMap.put(LOGGER_DEPTH, depth);
+		loggerMap.put(LOGGER_URL, result.getUrl());
+		loggerMap.put(LOGGER_MESSAGE, result.getMessage());
+		loggerMap.put(LOGGER_ROOT_URL, result.getRootUrl());
+		loggerMap.put(LOGGER_SIZE, result.getContent().length);
+
 		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
 
 			String bodyHtml = null;
@@ -332,7 +358,18 @@ public class FetcherJob implements Job {
 			List<String> childPages = elements.stream().map(e -> e.attr("href"))
 					.filter(href -> (!href.startsWith(HTTP) && !href.startsWith(HTTPS) && !href.startsWith("mailto") && !href.startsWith("javascript") && !href.endsWith(".css") && !href.endsWith(".js")) || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
 					.filter(href -> !href.equals("/") && !href.startsWith("//"))
-					.filter(href -> excludedLinkRegex.stream().noneMatch(ex -> href.matches(ex)))
+					.filter(href -> {
+
+						Boolean anyMatch = excludedLinkRegex.stream().noneMatch(ex -> href.matches(ex));
+
+						if (anyMatch) {
+							loggerMap.put(LOGGER_URL, href);
+							loggerMap.put(LOGGER_ACTION, "exclude_link");
+							LOGGER.info(Markers.appendEntries(loggerMap), "tracking");
+						}
+
+						return anyMatch;
+					})
 					.sorted()
 					.collect(Collectors.toList());
 
@@ -347,11 +384,13 @@ public class FetcherJob implements Job {
 
 			maxPagesCount++;
 			consumer.accept(metadata);
-			LOGGER.info("Thread {}, status {}, pages {}, depth {}, url {}, message {}, rootUrl {}, size {}, tmpList {}", threadId, result.getCode(), maxPagesCount, depth, result.getUrl(), result.getMessage(), result.getRootUrl(), metadata.get(METADATA_CONTENT).toString().length(), tmpList.size());
+			loggerMap.put(LOGGER_ACTION, "include_data");
 
 		} else {
-			LOGGER.info("Excluded Thread {}, status {}, pages {}, depth {}, url {}, message {}, rootUrl {}, size {}, tmpList {}", threadId, result.getCode(), maxPagesCount, depth, result.getUrl(), result.getMessage(), result.getRootUrl(), result.getContent().length, tmpList.size());
+			loggerMap.put(LOGGER_ACTION, "exclude_data");
 		}
+
+		LOGGER.info(Markers.appendEntries(loggerMap), "tracking");
 
 		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
 		Long newDepth = depth + 1;
