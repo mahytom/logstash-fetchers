@@ -363,9 +363,18 @@ public class FetcherJob implements Job {
 						Boolean anyMatch = excludedLinkRegex.stream().noneMatch(ex -> href.matches(ex));
 
 						if (anyMatch) {
+
 							loggerMap.put(LOGGER_URL, href);
 							loggerMap.put(LOGGER_ACTION, "exclude_link");
-							LOGGER.info(Markers.appendEntries(loggerMap), "tracking");
+
+							LOGGER.info(Markers.appendEntries(loggerMap), String.format("%s %s, status %s, pages %s, depth %s, url %s, message %s, rootUrl %s, size %s, tmpList %s",
+									loggerMap.get(LOGGER_ACTION), threadId,
+									result.getCode(),
+									maxPagesCount, depth, href,
+									result.getMessage(),
+									result.getRootUrl(),
+									result.getContent().length,
+									tmpList.size()));
 						}
 
 						return anyMatch;
@@ -390,7 +399,17 @@ public class FetcherJob implements Job {
 			loggerMap.put(LOGGER_ACTION, "exclude_data");
 		}
 
-		LOGGER.info(Markers.appendEntries(loggerMap), "tracking");
+		if (LOGGER.isInfoEnabled()) {
+
+			LOGGER.info(Markers.appendEntries(loggerMap), String.format("%s %s, status %s, pages %s, depth %s, url %s, message %s, rootUrl %s, size %s, tmpList %s",
+					loggerMap.get(LOGGER_ACTION), threadId,
+					result.getCode(),
+					maxPagesCount, depth, result.getUrl(),
+					result.getMessage(),
+					result.getRootUrl(),
+					result.getContent().length,
+					tmpList.size()));
+		}
 
 		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
 		Long newDepth = depth + 1;
