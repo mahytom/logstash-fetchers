@@ -10,7 +10,6 @@ import org.apache.commons.io.IOUtils;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.LogManager;
 
-import eu.wajja.web.fetcher.FetcherJob;
 import eu.wajja.web.fetcher.model.Result;
 
 public class URLController {
@@ -31,6 +30,11 @@ public class URLController {
 	}
 
 	public Result getURL(String currentUrl, String initialUrl) {
+
+		return getURL(currentUrl, initialUrl, 0);
+	}
+
+	private Result getURL(String currentUrl, String initialUrl, int counter) {
 
 		HttpURLConnection httpURLConnection = null;
 		Result result = new Result();
@@ -76,7 +80,7 @@ public class URLController {
 					LOGGER.debug("Not redirecting to external url  {}", newUrl);
 				} else {
 					LOGGER.debug("Redirect needed to :  {}", newUrl);
-					return getURL(newUrl, initialUrl);
+					return getURL(newUrl, initialUrl, counter);
 				}
 
 			} else {
@@ -87,9 +91,15 @@ public class URLController {
 
 			LOGGER.warn("Thread url {}, sleeping and trying again", currentUrl);
 
+			if (counter > 3) {
+				LOGGER.error("Thread url {}, failed to download page within timeout", currentUrl);
+				return result;
+			}
+
 			try {
 				Thread.sleep(3000);
-				return getURL(currentUrl, initialUrl);
+				counter++;
+				return getURL(currentUrl, initialUrl, counter);
 
 			} catch (InterruptedException e1) {
 				Thread.currentThread().interrupt();
