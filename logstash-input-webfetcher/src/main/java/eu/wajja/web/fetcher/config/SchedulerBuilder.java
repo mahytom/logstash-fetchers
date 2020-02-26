@@ -5,12 +5,12 @@ import org.quartz.SchedulerException;
 import org.quartz.impl.DirectSchedulerFactory;
 import org.quartz.simpl.RAMJobStore;
 import org.quartz.simpl.SimpleThreadPool;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
 
 public class SchedulerBuilder {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(SchedulerBuilder.class);
+	private static final Logger LOGGER = LogManager.getLogger(SchedulerBuilder.class);
 
 	private static final String DEFAULT_INSTANCE_ID = "LOGSTASH_WEB_FETCHER";
 	private static Scheduler scheduler;

@@ -17,8 +17,10 @@ import org.quartz.JobDetail;
 import org.quartz.SchedulerException;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+//import org.slf4j.Logger;
+//import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
 
 import co.elastic.logstash.api.Configuration;
 import co.elastic.logstash.api.Context;
@@ -36,7 +38,7 @@ import eu.wajja.web.fetcher.config.SchedulerBuilder;
 @LogstashPlugin(name = "webfetcher")
 public class WebFetcher implements Input {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(WebFetcher.class);
+	private static final Logger LOGGER = LogManager.getLogger(WebFetcher.class);
 
 	protected static final String PROPERTY_URLS = "urls";
 	protected static final String PROPERTY_URL = "url";

@@ -36,8 +36,12 @@ import org.quartz.Job;
 import org.quartz.JobDataMap;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+//import org.slf4j.Logger;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.message.StringMapMessage;
+
+//import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -45,12 +49,12 @@ import eu.wajja.web.fetcher.controller.ProxyController;
 import eu.wajja.web.fetcher.controller.URLController;
 import eu.wajja.web.fetcher.enums.Command;
 import eu.wajja.web.fetcher.model.Result;
-import net.logstash.logback.marker.Markers;
+//import net.logstash.logback.marker.Markers;
 
 @DisallowConcurrentExecution
 public class FetcherJob implements Job {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(FetcherJob.class);
+	private static final Logger LOGGER = LogManager.getLogger(FetcherJob.class);
 
 	private static final String METADATA_EPOCH = "epochSecond";
 	private static final String METADATA_REFERENCE = "reference";
@@ -366,15 +370,26 @@ public class FetcherJob implements Job {
 
 							loggerMap.put(LOGGER_URL, href);
 							loggerMap.put(LOGGER_ACTION, "exclude_link");
+                            LOGGER.info(new StringMapMessage()
+                                    .with(LOGGER_ACTION, loggerMap.get(LOGGER_ACTION))
+                                    .with("threadId", threadId)
+                                    .with("status", result.getCode() )
+                                    .with("pages", maxPagesCount )
+                                    .with("depth", depth)
+                                    .with("url", href)
+                                    .with("rootUrl", result.getRootUrl())
+                                    .with("size", result.getContent().length)
+                                    .with("tmpList", tmpList.size()));
+                                    //.with("message", result.getMessage())
 
-							LOGGER.info(Markers.appendEntries(loggerMap), String.format("%s %s, status %s, pages %s, depth %s, url %s, message %s, rootUrl %s, size %s, tmpList %s",
+							/*LOGGER.info(Markers.appendEntries(loggerMap), String.format("%s %s, status %s, pages %s, depth %s, url %s, message %s, rootUrl %s, size %s, tmpList %s",
 									loggerMap.get(LOGGER_ACTION), threadId,
 									result.getCode(),
 									maxPagesCount, depth, href,
 									result.getMessage(),
 									result.getRootUrl(),
 									result.getContent().length,
-									tmpList.size()));
+									tmpList.size()));*/
 						}
 
 						return anyMatch;
@@ -400,15 +415,26 @@ public class FetcherJob implements Job {
 		}
 
 		if (LOGGER.isInfoEnabled()) {
+                            LOGGER.info(new StringMapMessage()
+                                    .with(LOGGER_ACTION, loggerMap.get(LOGGER_ACTION))
+                                    .with("threadId",threadId)
+                                    .with("status", result.getCode())
+                                    .with("pages", maxPagesCount)
+                                    .with("depth", depth)
+                                    .with("url", result.getUrl())
+                                    .with("rootUrl", result.getRootUrl())
+                                    .with("size", result.getContent().length)
+                                    .with("tmpList", tmpList.size()));
+                                    //.with("message", result.getMessage())
 
-			LOGGER.info(Markers.appendEntries(loggerMap), String.format("%s %s, status %s, pages %s, depth %s, url %s, message %s, rootUrl %s, size %s, tmpList %s",
+			/*LOGGER.info(Markers.appendEntries(loggerMap), String.format("%s %s, status %s, pages %s, depth %s, url %s, message %s, rootUrl %s, size %s, tmpList %s",
 					loggerMap.get(LOGGER_ACTION), threadId,
 					result.getCode(),
 					maxPagesCount, depth, result.getUrl(),
 					result.getMessage(),
 					result.getRootUrl(),
 					result.getContent().length,
-					tmpList.size()));
+					tmpList.size()));*/
 		}
 
 		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);

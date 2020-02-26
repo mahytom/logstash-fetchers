@@ -22,8 +22,8 @@ import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
 
 import com.machinepublishers.jbrowserdriver.JBrowserDriver;
 import com.machinepublishers.jbrowserdriver.ProxyConfig;
@@ -35,7 +35,7 @@ import com.machinepublishers.jbrowserdriver.UserAgent;
 
 public class ProxyController {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(ProxyController.class);
+	private static final Logger LOGGER = LogManager.getLogger(ProxyController.class);
 
 	private Proxy proxy = null;
 	private WebDriver driver = null;

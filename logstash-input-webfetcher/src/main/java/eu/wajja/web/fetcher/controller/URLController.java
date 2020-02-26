@@ -7,15 +7,15 @@ import java.net.SocketTimeoutException;
 import java.net.URL;
 
 import org.apache.commons.io.IOUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
 
 import eu.wajja.web.fetcher.FetcherJob;
 import eu.wajja.web.fetcher.model.Result;
 
 public class URLController {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(FetcherJob.class);
+	private static final Logger LOGGER = LogManager.getLogger(FetcherJob.class);
 
 	private Proxy proxy;
 	private Long timeout;
