@@ -6,6 +6,8 @@ import java.net.Proxy;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 
+import javax.net.ssl.SSLException;
+
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,13 +77,8 @@ public class URLController {
 			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_SEE_OTHER) {
 
 				String newUrl = httpURLConnection.getHeaderField("Location");
-
-				if (!newUrl.startsWith(initialUrl)) {
-					LOGGER.debug("Not redirecting to external url  {}", newUrl);
-				} else {
-					LOGGER.debug("Redirect needed to :  {}", newUrl);
-					return getURL(newUrl, initialUrl, counter);
-				}
+				LOGGER.debug("Redirect needed to :  {}", newUrl);
+				return getURL(newUrl, initialUrl, counter);
 
 			} else {
 				LOGGER.warn("Failed To Read status {}, url {}, message {}", code, url, message);
@@ -93,6 +90,24 @@ public class URLController {
 
 			if (counter > 3) {
 				LOGGER.error("Thread url {}, failed to download page within timeout", currentUrl);
+				return result;
+			}
+
+			try {
+				Thread.sleep(3000);
+				counter++;
+				return getURL(currentUrl, initialUrl, counter);
+
+			} catch (InterruptedException e1) {
+				Thread.currentThread().interrupt();
+			}
+
+		} catch (SSLException e) {
+
+			LOGGER.warn("Thread url {}, SSLException error, sleeping and trying again", currentUrl, e);
+
+			if (counter > 3) {
+				LOGGER.error("Thread url {}, SSLException final error, stopping the thread", currentUrl);
 				return result;
 			}
 

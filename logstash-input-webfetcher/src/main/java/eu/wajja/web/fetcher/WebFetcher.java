@@ -61,7 +61,7 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_CRAWLER_USER_AGENT = "crawlerUserAgent";
 	protected static final String PROPERTY_CRAWLER_REFERER = "crawlerReferer";
 	protected static final String PROPERTY_READ_ROBOT = "readRobot";
-	
+
 	public static final String GROUP_NAME = "group001";
 
 	public static final PluginConfigSpec<List<Object>> CONFIG_URLS = PluginConfigSpec.arraySetting(PROPERTY_URLS);
@@ -119,7 +119,7 @@ public class WebFetcher implements Input {
 		jobDataMap.put(PROPERTY_CRAWLER_REFERER, config.get(CONFIG_CRAWLER_REFERER));
 		jobDataMap.put(PROPERTY_CRAWLER_USER_AGENT, config.get(CONFIG_CRAWLER_USER_AGENT));
 		jobDataMap.put(PROPERTY_READ_ROBOT, config.get(CONFIG_READ_ROBOT));
-		
+
 		jobDataMap.put(PROPERTY_PROXY_HOST, config.get(CONFIG_PROXY_HOST));
 		jobDataMap.put(PROPERTY_PROXY_PORT, config.get(CONFIG_PROXY_PORT));
 		jobDataMap.put(PROPERTY_PROXY_USER, config.get(CONFIG_PROXY_USER));
@@ -129,6 +129,7 @@ public class WebFetcher implements Input {
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.cron = config.get(CONFIG_CRON);
 
+		jobDataMap.put(PROPERTY_PROXY_PASS, config.get(CONFIG_PROXY_PASS));
 	}
 
 	@Override
@@ -207,6 +208,7 @@ public class WebFetcher implements Input {
 				CONFIG_WAIT_JAVASCRIPT,
 				CONFIG_CRON,
 				CONFIG_THREADS,
+				CONFIG_READ_ROBOT,
 				CONFIG_CRAWLER_REFERER,
 				CONFIG_CRAWLER_USER_AGENT,
 				CONFIG_CHROME_DRIVER);

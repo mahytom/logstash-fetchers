@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.UUID;
@@ -43,9 +42,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import eu.wajja.web.fetcher.controller.ProxyController;
 import eu.wajja.web.fetcher.controller.URLController;
+import eu.wajja.web.fetcher.controller.WebDriverController;
 import eu.wajja.web.fetcher.enums.Command;
 import eu.wajja.web.fetcher.model.Result;
-import net.logstash.logback.marker.Markers;
 
 @DisallowConcurrentExecution
 public class FetcherJob implements Job {
@@ -80,8 +79,8 @@ public class FetcherJob implements Job {
 
 	private ObjectMapper objectMapper = new ObjectMapper();
 	private URLController urlController;
+	private WebDriverController webDriverController;
 	private ProxyController proxyController;
-	private ThreadPoolExecutor executorService;
 
 	private Long maxDepth;
 	private Long maxPages;
@@ -93,7 +92,9 @@ public class FetcherJob implements Job {
 	private String fireId;
 	private String crawlerUserAgent;
 
-	private List<String> tmpList = new ArrayList<>();
+	private Set<String> processedSet = new HashSet<>();
+	private Set<String> processingSet = new HashSet<>();
+
 	protected Map<String, Set<String>> disallowedLocations = new HashMap<>();
 	protected Map<String, Set<String>> allowedLocations = new HashMap<>();
 	protected Map<String, Set<String>> sitemapLocations = new HashMap<>();
@@ -110,7 +111,7 @@ public class FetcherJob implements Job {
 		Boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
 		Long threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
 
-		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
+		ThreadPoolExecutor executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
 
 		this.fireId = context.getFireInstanceId();
 		this.maxDepth = dataMap.getLong(WebFetcher.PROPERTY_MAX_DEPTH);
@@ -143,6 +144,16 @@ public class FetcherJob implements Job {
 
 		}
 
+		if (webDriverController == null && waitJavascript) {
+
+			webDriverController = new WebDriverController(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
+					dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
+					dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
+					dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
+					dataMap.getString(WebFetcher.PROPERTY_CHROME_DRIVER),
+					dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT));
+		}
+
 		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
 
 		String id = Base64.getEncoder().encodeToString(initialUrl.getBytes());
@@ -165,23 +176,35 @@ public class FetcherJob implements Job {
 		}
 
 		// Extract the site content
-		extractUrl(consumer, initialUrl, initialUrl, 0l);
+		processingSet.add(initialUrl);
+		Long depth = 0l;
 
-		while (executorService.getActiveCount() > 0) {
+		while (processedSet.size() != processingSet.size()) {
 
-			try {
-				Thread.sleep(5000);
-			} catch (InterruptedException e) {
-				LOGGER.error("Failed to sleep in thread", e);
-				Thread.currentThread().interrupt();
+			for (String url : processingSet) {
+
+				if (!processedSet.contains(url)) {
+					Long currentDepth = depth;
+					executorService.execute(() -> extractUrl(consumer, url, initialUrl, currentDepth));
+				}
 			}
+
+			while (executorService.getActiveCount() > 0) {
+
+				try {
+					Thread.sleep(500);
+					LOGGER.info("Waiting for site {} to be finished, active threads left {}, queue {}/{}", initialUrl, executorService.getActiveCount(), processedSet.size(), processingSet.size());
+				} catch (InterruptedException e) {
+					LOGGER.error("Failed to sleep in thread", e);
+					Thread.currentThread().interrupt();
+				}
+			}
+
+			depth++;
 		}
 
 		// Compare to previously extracted content and delete delta
 		deleteOldDocuments(consumer, dataFolder, id);
-
-		// Close all proxy connections
-		proxyController.close();
 
 		LOGGER.info("Finished Thread {}", threadId);
 
@@ -261,11 +284,11 @@ public class FetcherJob implements Job {
 			urlString = getUrlString(urlStringTmp, rootUrl);
 			String uuid = UUID.randomUUID().toString();
 
-			if (tmpList.contains(urlString)) {
+			if (processedSet.contains(urlString)) {
 				return;
 			} else {
 
-				tmpList.add(urlString);
+				processedSet.add(urlString);
 
 				Set<String> disallowedList = new HashSet<>();
 
@@ -293,10 +316,7 @@ public class FetcherJob implements Job {
 			Result result = urlController.getURL(urlString, rootUrl);
 
 			if (result != null && result.getContent() != null) {
-
-				List<String> childPages = extractContent(consumer, result, uuid, depth);
-				Optional.ofNullable(childPages).orElse(new ArrayList<>()).stream().forEach(childUrl -> executorService.execute(() -> extractUrl(consumer, childUrl, result.getRootUrl(), depth + 1)));
-
+				processingSet.addAll(extractContent(consumer, result, uuid, depth));
 			}
 
 		} catch (Exception e) {
@@ -305,7 +325,6 @@ public class FetcherJob implements Job {
 
 	}
 
-	@SuppressWarnings("unchecked")
 	private List<String> extractContent(Consumer<Map<String, Object>> consumer, Result result, String uuid, Long depth) throws IOException {
 
 		byte[] bytes = result.getContent();
@@ -330,64 +349,9 @@ public class FetcherJob implements Job {
 		loggerMap.put(LOGGER_STATUS, result.getCode());
 		loggerMap.put(LOGGER_PAGES, maxPagesCount);
 		loggerMap.put(LOGGER_DEPTH, depth);
-		loggerMap.put(LOGGER_URL, result.getUrl());
 		loggerMap.put(LOGGER_MESSAGE, result.getMessage());
 		loggerMap.put(LOGGER_ROOT_URL, result.getRootUrl());
 		loggerMap.put(LOGGER_SIZE, result.getContent().length);
-
-		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
-
-			String bodyHtml = null;
-
-			if (waitJavascript) {
-
-				proxyController.getDriver().get(result.getUrl());
-				bodyHtml = proxyController.getDriver().getPageSource();
-
-				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bodyHtml.getBytes()));
-
-			} else {
-				bodyHtml = IOUtils.toString(bytes, StandardCharsets.UTF_8.name());
-			}
-
-			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
-			Elements elements = document.getElementsByAttribute("href");
-
-			String simpleUrlString = getSimpleUrl(result.getRootUrl());
-
-			List<String> childPages = elements.stream().map(e -> e.attr("href"))
-					.filter(href -> (!href.startsWith(HTTP) && !href.startsWith(HTTPS) && !href.startsWith("mailto") && !href.startsWith("javascript") && !href.endsWith(".css") && !href.endsWith(".js")) || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
-					.filter(href -> !href.equals("/") && !href.startsWith("//"))
-					.filter(href -> {
-
-						Boolean anyMatch = excludedLinkRegex.stream().noneMatch(ex -> href.matches(ex));
-
-						if (anyMatch) {
-
-							loggerMap.put(LOGGER_URL, href);
-							loggerMap.put(LOGGER_ACTION, "exclude_link");
-
-							LOGGER.info(Markers.appendEntries(loggerMap), String.format("%s %s, status %s, pages %s, depth %s, url %s, message %s, rootUrl %s, size %s, tmpList %s",
-									loggerMap.get(LOGGER_ACTION), threadId,
-									result.getCode(),
-									maxPagesCount, depth, href,
-									result.getMessage(),
-									result.getRootUrl(),
-									result.getContent().length,
-									tmpList.size()));
-						}
-
-						return anyMatch;
-					})
-					.sorted()
-					.collect(Collectors.toList());
-
-			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> (href.startsWith(HTTP) || href.startsWith(HTTPS)) && !href.startsWith(HTTP + simpleUrlString) && !href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
-
-			metadata.put(METADATA_CHILD, new ArrayList<>(new HashSet<>(childPages)));
-			metadata.put(METADATA_EXTERNAL, new ArrayList<>(new HashSet<>(externalPages)));
-
-		}
 
 		if (excludedDataRegex.stream().noneMatch(ex -> result.getUrl().matches(ex))) {
 
@@ -400,18 +364,64 @@ public class FetcherJob implements Job {
 		}
 
 		if (LOGGER.isInfoEnabled()) {
-
-			LOGGER.info(Markers.appendEntries(loggerMap), String.format("%s %s, status %s, pages %s, depth %s, url %s, message %s, rootUrl %s, size %s, tmpList %s",
-					loggerMap.get(LOGGER_ACTION), threadId,
-					result.getCode(),
-					maxPagesCount, depth, result.getUrl(),
-					result.getMessage(),
-					result.getRootUrl(),
-					result.getContent().length,
-					tmpList.size()));
+			loggerMap.put(LOGGER_URL, result.getUrl());
+			LOGGER.info(objectMapper.writeValueAsString(loggerMap));
 		}
 
-		List<String> childPages = (List<String>) metadata.get(METADATA_CHILD);
+		List<String> childPages = new ArrayList<>();
+
+		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
+
+			String bodyHtml = null;
+
+			if (waitJavascript) {
+				Result resultJavascript = webDriverController.getURL(result.getUrl());
+				bodyHtml = IOUtils.toString(resultJavascript.getContent(), StandardCharsets.UTF_8.name());
+				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(resultJavascript.getContent()));
+
+			} else {
+				bodyHtml = IOUtils.toString(bytes, StandardCharsets.UTF_8.name());
+			}
+
+			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
+			Elements elements = document.getElementsByAttribute("href");
+
+			String simpleUrlString = getSimpleUrl(result.getRootUrl());
+
+			childPages = elements.stream().map(e -> e.attr("href"))
+					.filter(href -> (!href.startsWith(HTTP) && !href.startsWith(HTTPS) && !href.startsWith("mailto") && !href.startsWith("javascript") && !href.endsWith(".css") && !href.endsWith(".js")) || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
+					.filter(href -> !href.equals("/") && !href.startsWith("//"))
+					.map(url -> getUrlString(url, result.getRootUrl()))
+					.filter(href -> !processingSet.contains(href))
+					.filter(href -> {
+
+						Boolean anyMatch = excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex));
+						loggerMap.put(LOGGER_URL, href);
+
+						if (anyMatch) {
+							loggerMap.put(LOGGER_ACTION, "exclude_link");
+						} else {
+							loggerMap.put(LOGGER_ACTION, "include_link");
+						}
+
+						try {
+							LOGGER.info(objectMapper.writeValueAsString(loggerMap));
+						} catch (IOException e1) {
+							LOGGER.info("Failed to parse JSON", e1);
+						}
+
+						return !anyMatch;
+					})
+					.sorted()
+					.collect(Collectors.toList());
+
+			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> (href.startsWith(HTTP) || href.startsWith(HTTPS)) && !href.startsWith(HTTP + simpleUrlString) && !href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
+
+			metadata.put(METADATA_CHILD, new ArrayList<>(new HashSet<>(childPages)));
+			metadata.put(METADATA_EXTERNAL, new ArrayList<>(new HashSet<>(externalPages)));
+
+		}
+
 		Long newDepth = depth + 1;
 
 		if (maxDepth == 0 || newDepth <= maxDepth) {
@@ -422,46 +432,51 @@ public class FetcherJob implements Job {
 
 	}
 
-	private String getUrlString(String urlString, String rootUrl) throws MalformedURLException {
+	private String getUrlString(String urlString, String rootUrl) {
 
 		urlString = urlString.trim();
 
-		if (!urlString.startsWith("http") && urlString.startsWith("/")) {
+		try {
+			if (!urlString.startsWith("http") && urlString.startsWith("/")) {
 
-			URL urlRoot = new URL(rootUrl);
-			String path = urlRoot.getPath();
+				URL urlRoot = new URL(rootUrl);
+				String path = urlRoot.getPath();
 
-			if (StringUtils.isEmpty(path) || path.equals("/")) {
+				if (StringUtils.isEmpty(path) || path.equals("/")) {
 
-				if (urlRoot.toString().endsWith("/") && urlString.startsWith("/")) {
-					urlString = urlRoot + urlString.substring(1);
+					if (urlRoot.toString().endsWith("/") && urlString.startsWith("/")) {
+						urlString = urlRoot + urlString.substring(1);
+					} else {
+						urlString = urlRoot + urlString;
+					}
+
 				} else {
-					urlString = urlRoot + urlString;
+					urlString = rootUrl.replace(path, "") + urlString;
 				}
 
-			} else {
-				urlString = rootUrl.replace(path, "") + urlString;
+			} else if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
+
+				URL urlRoot = new URL(rootUrl);
+				String path = urlRoot.getPath();
+
+				if (StringUtils.isEmpty(path) || path.equals("/")) {
+
+					urlString = urlRoot + "/" + urlString;
+				} else {
+					urlString = urlRoot.toString().substring(0, urlRoot.toString().lastIndexOf('/') + 1) + urlString;
+				}
 			}
 
-		} else if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
-
-			URL urlRoot = new URL(rootUrl);
-			String path = urlRoot.getPath();
-
-			if (StringUtils.isEmpty(path) || path.equals("/")) {
-
-				urlString = urlRoot + "/" + urlString;
-			} else {
-				urlString = urlRoot.toString().substring(0, urlRoot.toString().lastIndexOf('/') + 1) + urlString;
+			if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
+				urlString = rootUrl + urlString;
 			}
-		}
 
-		if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
-			urlString = rootUrl + urlString;
-		}
+			if (urlString.endsWith("/") && !urlString.equals(rootUrl)) {
+				urlString = urlString.substring(0, urlString.lastIndexOf('/'));
+			}
 
-		if (urlString.endsWith("/") && !urlString.equals(rootUrl)) {
-			urlString = urlString.substring(0, urlString.lastIndexOf('/'));
+		} catch (MalformedURLException e) {
+			LOGGER.error("Failed to parse url {}", urlString, e);
 		}
 
 		return urlString;
@@ -516,14 +531,14 @@ public class FetcherJob implements Job {
 
 			try {
 				List<String> legacyFile = Arrays.asList(objectMapper.readValue(pathFile.toFile(), String[].class));
-				List<String> urlsForDeletion = legacyFile.stream().filter(l -> !tmpList.contains(l)).collect(Collectors.toList());
+				List<String> urlsForDeletion = legacyFile.stream().filter(l -> !processedSet.contains(l)).collect(Collectors.toList());
 
 				LOGGER.info("Thread deleting {}, deleting {} urls", threadId, urlsForDeletion.size());
 
 				urlsForDeletion.parallelStream().forEach(url -> {
 
 					String reference = Base64.getEncoder().encodeToString(url.getBytes());
-					LOGGER.info("Thread Sending Deletion {} , reference {}", threadId, reference);
+					LOGGER.info("Thread Sending Deletion {}, reference {}", threadId, reference);
 
 					Map<String, Object> metadata = new HashMap<>();
 					metadata.put(METADATA_REFERENCE, reference);
@@ -541,7 +556,7 @@ public class FetcherJob implements Job {
 		}
 
 		try {
-			String json = objectMapper.writeValueAsString(tmpList);
+			String json = objectMapper.writeValueAsString(processedSet);
 			Files.write(pathFile, json.getBytes());
 		} catch (IOException e) {
 			LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);

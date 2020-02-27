@@ -8,18 +8,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.function.Consumer;
-import java.util.stream.Collectors;
 
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 import org.logstash.plugins.ConfigurationImpl;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import co.elastic.logstash.api.Configuration;
 
 public class WebFetcherTest {
 
 	private Properties properties;
+	private ObjectMapper objectMapper = new ObjectMapper();
 
 	@Before
 	public void intialize() throws IOException {
@@ -29,18 +31,20 @@ public class WebFetcherTest {
 	}
 
 	@Test
-	public void testWebFetcher() {
+	public void testWebFetcher() throws IOException {
 
 		Map<String, Object> configValues = new HashMap<>();
 		configValues.put(WebFetcher.CONFIG_URLS.name(), Arrays.asList(((String) properties.get(WebFetcher.PROPERTY_URLS))));
 		configValues.put(WebFetcher.CONFIG_DATA_FOLDER.name(), properties.get(WebFetcher.PROPERTY_DATAFOLDER));
-		configValues.put(WebFetcher.CONFIG_EXCLUDE_DATA.name(), Arrays.asList(((String) properties.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_DATA, ".css")).split(",")).stream().map(tt -> tt.substring(1, tt.length() - 1)).collect(Collectors.toList()));
-		configValues.put(WebFetcher.CONFIG_EXCLUDE_LINK.name(), Arrays.asList(((String) properties.getOrDefault(WebFetcher.PROPERTY_EXCLUDE_LINK, ".css")).split(",")).stream().map(tt -> tt.substring(1, tt.length() - 1)).collect(Collectors.toList()));
+		configValues.put(WebFetcher.CONFIG_EXCLUDE_DATA.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_EXCLUDE_DATA), String[].class)));
+		configValues.put(WebFetcher.CONFIG_EXCLUDE_LINK.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_EXCLUDE_LINK), String[].class)));
 		configValues.put(WebFetcher.CONFIG_CRON.name(), properties.get(WebFetcher.PROPERTY_CRON));
 		configValues.put(WebFetcher.CONFIG_TIMEOUT.name(), new Long((String) properties.get(WebFetcher.PROPERTY_TIMEOUT)));
 		configValues.put(WebFetcher.CONFIG_THREADS.name(), new Long((String) properties.get(WebFetcher.PROPERTY_THREADS)));
 		configValues.put(WebFetcher.CONFIG_MAX_PAGES.name(), new Long((String) properties.get(WebFetcher.PROPERTY_MAX_PAGES)));
-		
+		configValues.put(WebFetcher.CONFIG_DISABLE_SSL_CHECK.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_SSL_CHECK)));
+		configValues.put(WebFetcher.CONFIG_WAIT_JAVASCRIPT.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_JAVASCRIPT)));
+
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);
 		webFetcher.stopped = true;
