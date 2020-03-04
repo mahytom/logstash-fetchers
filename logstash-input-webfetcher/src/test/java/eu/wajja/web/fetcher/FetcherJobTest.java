@@ -76,7 +76,7 @@ public class FetcherJobTest {
 
 		String url = "https://ec.europa.eu/belgium/sites/belgium/files/og_image/poster_drapeau_europeen.jpg";
 		jobDataMap.put(WebFetcher.PROPERTY_READ_ROBOT, false);
-		jobDataMap.put(WebFetcher.PROPERTY_URL, url);
+		jobDataMap.put(WebFetcher.PROPERTY_URL, Arrays.asList(url));
 
 		Result result = new Result();
 		result.setContent("<html></html>".getBytes());

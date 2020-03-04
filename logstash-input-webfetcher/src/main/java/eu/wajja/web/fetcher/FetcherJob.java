@@ -64,6 +64,7 @@ public class FetcherJob implements Job {
 
 	private static final String LOGGER_THREAD = "thread";
 	private static final String LOGGER_FIREID = "fireId";
+	private static final String LOGGER_REFERENCE = "reference";
 	private static final String LOGGER_STATUS = "status";
 	private static final String LOGGER_PAGES = "pages";
 	private static final String LOGGER_DEPTH = "depth";
@@ -105,7 +106,7 @@ public class FetcherJob implements Job {
 
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
 		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
-		String initialUrl = dataMap.getString(WebFetcher.PROPERTY_URL);
+		List<String> initialUrls = (List<String>) dataMap.get(WebFetcher.PROPERTY_URL);
 
 		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
 		Boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
@@ -154,57 +155,62 @@ public class FetcherJob implements Job {
 					dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT));
 		}
 
-		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
+		initialUrls.stream().forEach(initialUrl -> {
 
-		String id = Base64.getEncoder().encodeToString(initialUrl.getBytes());
+			LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
 
-		// Read the robot.txt first
+			String id = Base64.getEncoder().encodeToString(initialUrl.getBytes());
 
-		if (readRobot) {
+			// Read the robot.txt first
 
-			Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
-			Matcher m = p.matcher(initialUrl);
+			if (readRobot) {
 
-			if (m.find()) {
-				String robotUrl = m.group(0) + ROBOTS;
-				readRobot(initialUrl, robotUrl);
+				Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
+				Matcher m = p.matcher(initialUrl);
 
-			} else {
-				LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
+				if (m.find()) {
+					String robotUrl = m.group(0) + ROBOTS;
+					readRobot(initialUrl, robotUrl);
+
+				} else {
+					LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
+				}
+
 			}
 
-		}
+			// Extract the site content
+			processingSet.add(initialUrl);
+			Long depth = 0l;
 
-		// Extract the site content
-		processingSet.add(initialUrl);
-		Long depth = 0l;
+			while (processedSet.size() != processingSet.size() && (processedSet.size() < maxPages && maxPages > 0) ) {
 
-		while (processedSet.size() != processingSet.size()) {
+				List<String> urls = processingSet.stream().filter(u -> !processedSet.contains(u)).collect(Collectors.toList());
 
-			for (String url : processingSet) {
+				for (String url : urls) {
 
-				if (!processedSet.contains(url)) {
 					Long currentDepth = depth;
 					executorService.execute(() -> extractUrl(consumer, url, initialUrl, currentDepth));
+
 				}
+
+				while (executorService.getActiveCount() > 0) {
+
+					try {
+						LOGGER.info("Waiting for site {} to be finished, active threads left {}, queue {}/{}", initialUrl, executorService.getActiveCount(), processedSet.size(), processingSet.size());
+						Thread.sleep(500);
+					} catch (InterruptedException e) {
+						LOGGER.error("Failed to sleep in thread", e);
+						Thread.currentThread().interrupt();
+					}
+				}
+
+				depth++;
 			}
 
-			while (executorService.getActiveCount() > 0) {
+			// Compare to previously extracted content and delete delta
+			deleteOldDocuments(consumer, dataFolder, id);
 
-				try {
-					Thread.sleep(500);
-					LOGGER.info("Waiting for site {} to be finished, active threads left {}, queue {}/{}", initialUrl, executorService.getActiveCount(), processedSet.size(), processingSet.size());
-				} catch (InterruptedException e) {
-					LOGGER.error("Failed to sleep in thread", e);
-					Thread.currentThread().interrupt();
-				}
-			}
-
-			depth++;
-		}
-
-		// Compare to previously extracted content and delete delta
-		deleteOldDocuments(consumer, dataFolder, id);
+		});
 
 		LOGGER.info("Finished Thread {}", threadId);
 
@@ -316,7 +322,7 @@ public class FetcherJob implements Job {
 			Result result = urlController.getURL(urlString, rootUrl);
 
 			if (result != null && result.getContent() != null) {
-				processingSet.addAll(extractContent(consumer, result, uuid, depth));
+				extractContent(consumer, result, uuid, depth);
 			}
 
 		} catch (Exception e) {
@@ -331,6 +337,8 @@ public class FetcherJob implements Job {
 		Map<String, List<String>> headers = result.getHeaders();
 
 		Map<String, Object> metadata = new HashMap<>();
+		headers.entrySet().stream().filter(entry -> entry.getKey() != null).forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
+		
 		metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
 		metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
 		metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
@@ -340,12 +348,11 @@ public class FetcherJob implements Job {
 		metadata.put(METADATA_CONTEXT, result.getRootUrl());
 		metadata.put(METADATA_COMMAND, Command.ADD.toString());
 
-		headers.entrySet().stream().filter(entry -> entry.getKey() != null).forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
-
 		Map<String, Object> loggerMap = new HashMap<>();
 
 		loggerMap.put(LOGGER_THREAD, this.threadId);
 		loggerMap.put(LOGGER_FIREID, this.fireId);
+		loggerMap.put(LOGGER_REFERENCE, metadata.get(METADATA_REFERENCE));
 		loggerMap.put(LOGGER_STATUS, result.getCode());
 		loggerMap.put(LOGGER_PAGES, maxPagesCount);
 		loggerMap.put(LOGGER_DEPTH, depth);
@@ -402,6 +409,7 @@ public class FetcherJob implements Job {
 							loggerMap.put(LOGGER_ACTION, "exclude_link");
 						} else {
 							loggerMap.put(LOGGER_ACTION, "include_link");
+							processingSet.add(href);
 						}
 
 						try {

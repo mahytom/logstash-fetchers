@@ -137,29 +137,25 @@ public class WebFetcher implements Input {
 
 		try {
 
-			for (String url : urls) {
+			JobDataMap newJobDataMap = new JobDataMap(this.jobDataMap);
+			newJobDataMap.put(PROPERTY_URL, urls);
+			newJobDataMap.put(PROPERTY_CONSUMER, consumer);
+			newJobDataMap.put(PROPERTY_THREAD_ID, threadId);
 
-				JobDataMap newJobDataMap = new JobDataMap(this.jobDataMap);
-				newJobDataMap.put(PROPERTY_URL, url);
-				newJobDataMap.put(PROPERTY_CONSUMER, consumer);
-				newJobDataMap.put(PROPERTY_THREAD_ID, threadId);
+			String uuid = UUID.randomUUID().toString();
 
-				String uuid = UUID.randomUUID().toString();
+			JobDetail job = JobBuilder.newJob(FetcherJob.class)
+					.withIdentity(uuid, GROUP_NAME)
+					.setJobData(newJobDataMap)
+					.build();
 
-				JobDetail job = JobBuilder.newJob(FetcherJob.class)
-						.withIdentity(uuid, GROUP_NAME)
-						.setJobData(newJobDataMap)
-						.build();
+			Trigger trigger = TriggerBuilder.newTrigger()
+					.withIdentity(uuid, GROUP_NAME)
+					.startNow()
+					.withSchedule(CronScheduleBuilder.cronSchedule(this.cron))
+					.build();
 
-				Trigger trigger = TriggerBuilder.newTrigger()
-						.withIdentity(uuid, GROUP_NAME)
-						.startNow()
-						.withSchedule(CronScheduleBuilder.cronSchedule(this.cron))
-						.build();
-
-				SchedulerBuilder.getScheduler().scheduleJob(job, trigger);
-
-			}
+			SchedulerBuilder.getScheduler().scheduleJob(job, trigger);
 
 			while (!stopped) {
 				Thread.sleep(1000);

@@ -44,6 +44,7 @@ public class WebFetcherTest {
 		configValues.put(WebFetcher.CONFIG_MAX_PAGES.name(), new Long((String) properties.get(WebFetcher.PROPERTY_MAX_PAGES)));
 		configValues.put(WebFetcher.CONFIG_DISABLE_SSL_CHECK.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_SSL_CHECK)));
 		configValues.put(WebFetcher.CONFIG_WAIT_JAVASCRIPT.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_JAVASCRIPT)));
+		configValues.put(WebFetcher.CONFIG_CHROME_DRIVER.name(), (String) properties.get(WebFetcher.PROPERTY_CHROME_DRIVER));
 
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);
