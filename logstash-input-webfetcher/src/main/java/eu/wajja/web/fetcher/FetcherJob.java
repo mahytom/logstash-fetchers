@@ -155,7 +155,7 @@ public class FetcherJob implements Job {
 					dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT));
 		}
 
-		initialUrls.stream().forEach(initialUrl -> {
+		initialUrls.stream().map(i -> getUrlString(i, i)).forEach(initialUrl -> {
 
 			LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
 
@@ -182,7 +182,7 @@ public class FetcherJob implements Job {
 			processingSet.add(initialUrl);
 			Long depth = 0l;
 
-			while (processedSet.size() != processingSet.size() && (processedSet.size() < maxPages && maxPages > 0) ) {
+			while (processedSet.size() != processingSet.size() && (processedSet.size() < maxPages && maxPages > 0)) {
 
 				List<String> urls = processingSet.stream().filter(u -> !processedSet.contains(u)).collect(Collectors.toList());
 
@@ -338,7 +338,7 @@ public class FetcherJob implements Job {
 
 		Map<String, Object> metadata = new HashMap<>();
 		headers.entrySet().stream().filter(entry -> entry.getKey() != null).forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
-		
+
 		metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
 		metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
 		metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
@@ -393,12 +393,13 @@ public class FetcherJob implements Job {
 			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
 			Elements elements = document.getElementsByAttribute("href");
 
-			String simpleUrlString = getSimpleUrl(result.getRootUrl());
+			String simpleUrlString = result.getRootUrl().replace(HTTP, "").replace(HTTPS, "");
 
 			childPages = elements.stream().map(e -> e.attr("href"))
-					.filter(href -> (!href.startsWith(HTTP) && !href.startsWith(HTTPS) && !href.startsWith("mailto") && !href.startsWith("javascript") && !href.endsWith(".css") && !href.endsWith(".js")) || href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
 					.filter(href -> !href.equals("/") && !href.startsWith("//"))
 					.map(url -> getUrlString(url, result.getRootUrl()))
+					.filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
+					.filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
 					.filter(href -> !processingSet.contains(href))
 					.filter(href -> {
 
@@ -485,6 +486,10 @@ public class FetcherJob implements Job {
 
 		} catch (MalformedURLException e) {
 			LOGGER.error("Failed to parse url {}", urlString, e);
+		}
+
+		if (urlString.endsWith("/")) {
+			urlString = urlString.substring(0, urlString.length() - 1);
 		}
 
 		return urlString;

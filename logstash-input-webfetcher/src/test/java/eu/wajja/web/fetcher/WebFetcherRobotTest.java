@@ -73,14 +73,14 @@ public class WebFetcherRobotTest {
 	public void robotsParseEuropaTest() throws JobExecutionException, IOException {
 
 		jobDataMap.put(WebFetcher.PROPERTY_READ_ROBOT, true);
-		jobDataMap.put(WebFetcher.PROPERTY_URL, Arrays.asList("https://ec.europa.eu/maritimeaffairs/press/"));
+		jobDataMap.put(WebFetcher.PROPERTY_URL, Arrays.asList("https://ec.europa.eu/maritimeaffairs/press"));
 
 		byte[] content = IOUtils.toByteArray(this.getClass().getClassLoader().getResourceAsStream("robots1.txt"));
 
 		Result result = new Result();
 		result.setContent(content);
 
-		Mockito.when(urlController.getURL(Mockito.eq("https://ec.europa.eu/robots.txt"), Mockito.eq("https://ec.europa.eu/maritimeaffairs/press/"))).thenReturn(result);
+		Mockito.when(urlController.getURL(Mockito.eq("https://ec.europa.eu/robots.txt"), Mockito.eq("https://ec.europa.eu/maritimeaffairs/press"))).thenReturn(result);
 
 		fetcherJob.execute(jobExecutionContext);
 
@@ -109,10 +109,10 @@ public class WebFetcherRobotTest {
 	@Test
 	public void robotsCrawlEuropaTest() throws JobExecutionException, IOException {
 
-		String rootUrl = "https://ec.europa.eu/digital-single-market/";
+		String rootUrl = "https://ec.europa.eu/digital-single-market";
 
 		jobDataMap.put(WebFetcher.PROPERTY_READ_ROBOT, true);
-		jobDataMap.put(WebFetcher.PROPERTY_URL, Arrays.asList("https://ec.europa.eu/digital-single-market/"));
+		jobDataMap.put(WebFetcher.PROPERTY_URL, Arrays.asList("https://ec.europa.eu/digital-single-market"));
 
 		byte[] content = IOUtils.toByteArray(this.getClass().getClassLoader().getResourceAsStream("robots2.txt"));
 
@@ -128,21 +128,22 @@ public class WebFetcherRobotTest {
 		result1.setRootUrl(rootUrl);
 		result1.getHeaders().put("Content-Type", Arrays.asList("text/html"));
 		result1.setContent(("<html>"
-				+ "<a href=\"" + rootUrl + "page1\"></a>"
-				+ "<a href=\"" + rootUrl + "page2\"></a>"
-				+ "<a href=\"" + rootUrl + "sites/1\"></a>"
+				+ "<a href=\"" + rootUrl + "/page1\"></a>"
+				+ "<a href=\"" + rootUrl + "/page2\"></a>"
+				+ "<a href=\"" + rootUrl + "/sites/1\"></a>"
 				+ "</html>").getBytes());
 
 		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl))).thenReturn(result1);
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "page1"), Mockito.eq(rootUrl))).thenReturn(result1);
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "page2"), Mockito.eq(rootUrl))).thenReturn(result1);
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "sites/1"), Mockito.eq(rootUrl))).thenReturn(result1);
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl))).thenReturn(result1);
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl))).thenReturn(result1);
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/sites/1"), Mockito.eq(rootUrl))).thenReturn(result1);
 
 		fetcherJob.execute(jobExecutionContext);
 
-		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "page1"), Mockito.eq(rootUrl));
-		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "page2"), Mockito.eq(rootUrl));
-		Mockito.verify(urlController, Mockito.never()).getURL(Mockito.eq(rootUrl + "sites/1"), Mockito.eq(rootUrl));
+		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl));
+		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl));
+		Mockito.verify(urlController, Mockito.never()).getURL(Mockito.eq(rootUrl + "/sites/1"), Mockito.eq(rootUrl));
+
 	}
 
 }
