@@ -495,37 +495,6 @@ public class FetcherJob implements Job {
 		return urlString;
 	}
 
-	private String getSimpleUrl(String urlString) {
-
-		try {
-
-			URL url = new URL(urlString);
-
-			StringBuilder stringBuilder = new StringBuilder();
-			stringBuilder.append(url.getHost());
-
-			if (url.getPort() > 0) {
-				stringBuilder.append(url.getPort());
-			}
-
-			String path = url.getPath();
-			if (path.startsWith("/") && path.length() > 2) {
-				path = path.substring(1, path.length());
-			}
-
-			if (path.split("/").length > 1) {
-				stringBuilder.append("/").append(path.substring(0, path.indexOf('/')));
-			}
-
-			return stringBuilder.toString();
-
-		} catch (MalformedURLException e) {
-			LOGGER.error("MalformedURLException", e);
-		}
-
-		return urlString;
-	}
-
 	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String dataFolder, String id) {
 
 		if (dataFolder == null) {
@@ -548,7 +517,7 @@ public class FetcherJob implements Job {
 
 				LOGGER.info("Thread deleting {}, deleting {} urls", threadId, urlsForDeletion.size());
 
-				urlsForDeletion.parallelStream().forEach(url -> {
+				urlsForDeletion.stream().forEach(url -> {
 
 					String reference = Base64.getEncoder().encodeToString(url.getBytes());
 					LOGGER.info("Thread Sending Deletion {}, reference {}", threadId, reference);
