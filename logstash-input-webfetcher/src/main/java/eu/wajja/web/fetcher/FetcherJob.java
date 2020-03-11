@@ -360,7 +360,7 @@ public class FetcherJob implements Job {
 		loggerMap.put(LOGGER_ROOT_URL, result.getRootUrl());
 		loggerMap.put(LOGGER_SIZE, result.getContent().length);
 
-		if (excludedDataRegex.stream().noneMatch(ex -> result.getUrl().matches(ex))) {
+		if (excludedDataRegex.stream().noneMatch(ex -> result.getUrl().matches(ex)) && result.getUrl().startsWith(result.getRootUrl())) {
 
 			maxPagesCount++;
 			consumer.accept(metadata);

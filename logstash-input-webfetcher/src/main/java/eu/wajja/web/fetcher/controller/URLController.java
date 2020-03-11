@@ -1,5 +1,6 @@
 package eu.wajja.web.fetcher.controller;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.Proxy;
@@ -68,8 +69,8 @@ public class URLController {
 
 			if (code == HttpURLConnection.HTTP_OK) {
 
-				InputStream inputStream = httpURLConnection.getInputStream();
-				byte[] content = IOUtils.toByteArray(inputStream);
+				byte[] content = getInputStream(httpURLConnection);
+				closeConnection(httpURLConnection);
 
 				result.setContent(content);
 				result.setHeaders(httpURLConnection.getHeaderFields());
@@ -77,6 +78,8 @@ public class URLController {
 			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_SEE_OTHER) {
 
 				String newUrl = httpURLConnection.getHeaderField("Location");
+				closeConnection(httpURLConnection);
+
 				LOGGER.debug("Redirect needed to :  {}", newUrl);
 				return getURL(newUrl, initialUrl, counter);
 
@@ -87,6 +90,7 @@ public class URLController {
 		} catch (SocketTimeoutException e) {
 
 			LOGGER.warn("Thread url {}, sleeping and trying again", currentUrl);
+			closeConnection(httpURLConnection);
 
 			if (counter > 3) {
 				LOGGER.error("Thread url {}, failed to download page within timeout", currentUrl);
@@ -105,6 +109,7 @@ public class URLController {
 		} catch (SSLException e) {
 
 			LOGGER.warn("Thread url {}, SSLException error, sleeping and trying again", currentUrl, e);
+			closeConnection(httpURLConnection);
 
 			if (counter > 3) {
 				LOGGER.error("Thread url {}, SSLException final error, stopping the thread", currentUrl);
@@ -123,13 +128,28 @@ public class URLController {
 		} catch (Exception e) {
 			LOGGER.error("Failed to retrieve URL url {}", currentUrl, e);
 		} finally {
-
-			if (httpURLConnection != null) {
-				httpURLConnection.disconnect();
-			}
+			closeConnection(httpURLConnection);
 		}
 
 		return result;
+	}
+
+	private void closeConnection(HttpURLConnection httpURLConnection) {
+
+		if (httpURLConnection != null) {
+			httpURLConnection.disconnect();
+		}
+	}
+
+	private byte[] getInputStream(HttpURLConnection httpURLConnection) throws IOException {
+
+		try (InputStream inputStream = httpURLConnection.getInputStream()) {
+			return IOUtils.toByteArray(inputStream);
+		} catch (IOException e) {
+			LOGGER.error("Failed to retrive url {}", httpURLConnection.getURL().toString(), e);
+		}
+
+		return new byte[0];
 	}
 
 }
