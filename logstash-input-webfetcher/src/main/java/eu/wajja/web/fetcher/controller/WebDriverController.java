@@ -1,5 +1,7 @@
 package eu.wajja.web.fetcher.controller;
 
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -8,6 +10,7 @@ import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.remote.RemoteWebDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,7 +45,7 @@ public class WebDriverController {
 		this.timeout = timeout;
 	}
 
-	public Result getURL(String currentUrl) {
+	public Result getURL(String currentUrl) throws MalformedURLException {
 
 		Result result = new Result();
 		result.setUrl(currentUrl);
@@ -70,6 +73,14 @@ public class WebDriverController {
 			}
 
 			webDriver = new JBrowserDriver(settings.build());
+
+		} else if (chromeDriver.startsWith("http")) {
+
+			ChromeOptions chromeOptions = new ChromeOptions();
+			chromeOptions.addArguments("--headless");
+			chromeOptions.addArguments("--no-sandbox");
+
+			webDriver = new RemoteWebDriver(new URL(chromeDriver), chromeOptions);
 
 		} else {
 
@@ -99,13 +110,18 @@ public class WebDriverController {
 
 			webDriver.get(currentUrl);
 			String content = webDriver.getPageSource();
+
+			if (content == null || content.isEmpty()) {
+				LOGGER.error("Current url {} is empty or null", currentUrl);
+			}
+
 			result.setCode(200);
 			result.setContent(content.getBytes());
 
 		} catch (Exception e) {
 			LOGGER.error("Failed to retrieve js page {}", currentUrl);
 		} finally {
-			webDriver.close();
+			webDriver.quit();
 		}
 
 		return result;

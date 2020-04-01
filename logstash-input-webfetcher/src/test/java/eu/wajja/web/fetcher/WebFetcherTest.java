@@ -34,7 +34,7 @@ public class WebFetcherTest {
 	public void testWebFetcher() throws IOException {
 
 		Map<String, Object> configValues = new HashMap<>();
-		configValues.put(WebFetcher.CONFIG_URLS.name(), Arrays.asList(((String) properties.get(WebFetcher.PROPERTY_URLS))));
+		configValues.put(WebFetcher.CONFIG_URLS.name(),Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_URLS), String[].class)));
 		configValues.put(WebFetcher.CONFIG_DATA_FOLDER.name(), properties.get(WebFetcher.PROPERTY_DATAFOLDER));
 		configValues.put(WebFetcher.CONFIG_EXCLUDE_DATA.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_EXCLUDE_DATA), String[].class)));
 		configValues.put(WebFetcher.CONFIG_EXCLUDE_LINK.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_EXCLUDE_LINK), String[].class)));

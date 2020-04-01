@@ -382,9 +382,13 @@ public class FetcherJob implements Job {
 			String bodyHtml = null;
 
 			if (waitJavascript) {
+
 				Result resultJavascript = webDriverController.getURL(result.getUrl());
-				bodyHtml = IOUtils.toString(resultJavascript.getContent(), StandardCharsets.UTF_8.name());
-				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(resultJavascript.getContent()));
+
+				if (resultJavascript.getContent() != null && resultJavascript.getContent().length > 0) {
+					bodyHtml = IOUtils.toString(resultJavascript.getContent(), StandardCharsets.UTF_8.name());
+					metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(resultJavascript.getContent()));
+				}
 
 			} else {
 				bodyHtml = IOUtils.toString(bytes, StandardCharsets.UTF_8.name());
