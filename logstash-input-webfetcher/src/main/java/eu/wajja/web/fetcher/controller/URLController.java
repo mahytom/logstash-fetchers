@@ -23,6 +23,7 @@ public class URLController {
 	private Long timeout;
 	private String userAgent;
 	private String referer;
+	private WebDriverController webDriverController = new WebDriverController();
 
 	public URLController(Proxy proxy, Long timeout, String userAgent, String referer) {
 
@@ -32,12 +33,7 @@ public class URLController {
 		this.referer = referer;
 	}
 
-	public Result getURL(String currentUrl, String initialUrl) {
-
-		return getURL(currentUrl, initialUrl, 0);
-	}
-
-	private Result getURL(String currentUrl, String initialUrl, int counter) {
+	public Result getURL(String currentUrl, String initialUrl, String chromeDriver) {
 
 		HttpURLConnection httpURLConnection = null;
 		Result result = new Result();
@@ -69,11 +65,10 @@ public class URLController {
 
 			if (code == HttpURLConnection.HTTP_OK) {
 
-				byte[] content = getInputStream(httpURLConnection);
 				closeConnection(httpURLConnection);
-
-				result.setContent(content);
 				result.setHeaders(httpURLConnection.getHeaderFields());
+
+				webDriverController.getURL(result, chromeDriver);
 
 			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_SEE_OTHER) {
 
@@ -81,7 +76,7 @@ public class URLController {
 				closeConnection(httpURLConnection);
 
 				LOGGER.debug("Redirect needed to :  {}", newUrl);
-				return getURL(newUrl, initialUrl, counter);
+				return getURL(newUrl, initialUrl, chromeDriver);
 
 			} else {
 				LOGGER.warn("Failed To Read status {}, url {}, message {}", code, url, message);
@@ -91,39 +86,13 @@ public class URLController {
 
 			LOGGER.warn("Thread url {}, sleeping and trying again", currentUrl);
 			closeConnection(httpURLConnection);
-
-			if (counter > 3) {
-				LOGGER.error("Thread url {}, failed to download page within timeout", currentUrl);
-				return result;
-			}
-
-			try {
-				Thread.sleep(3000);
-				counter++;
-				return getURL(currentUrl, initialUrl, counter);
-
-			} catch (InterruptedException e1) {
-				Thread.currentThread().interrupt();
-			}
+			return result;
 
 		} catch (SSLException e) {
 
 			LOGGER.warn("Thread url {}, SSLException error, sleeping and trying again", currentUrl, e);
 			closeConnection(httpURLConnection);
-
-			if (counter > 3) {
-				LOGGER.error("Thread url {}, SSLException final error, stopping the thread", currentUrl);
-				return result;
-			}
-
-			try {
-				Thread.sleep(3000);
-				counter++;
-				return getURL(currentUrl, initialUrl, counter);
-
-			} catch (InterruptedException e1) {
-				Thread.currentThread().interrupt();
-			}
+			return result;
 
 		} catch (Exception e) {
 			LOGGER.error("Failed to retrieve URL url {}", currentUrl, e);

@@ -49,17 +49,18 @@ public class WebFetcherLogicTest {
 
 	private JobDataMap jobDataMap;
 
+	private String chromeDriver = "http://localhost:3000";
+
 	@Before
 	public void intialize() {
 
 		Mockito.when(jobExecutionContext.getJobDetail()).thenReturn(jobDetail);
 
 		jobDataMap = new JobDataMap();
-		jobDataMap.put(WebFetcher.PROPERTY_THREADS, 1l);
 		jobDataMap.put(WebFetcher.PROPERTY_MAX_DEPTH, 1l);
 		jobDataMap.put(WebFetcher.PROPERTY_MAX_PAGES, 10l);
+		jobDataMap.put(WebFetcher.PROPERTY_CHROME_DRIVERS, Arrays.asList(chromeDriver));
 		jobDataMap.put(WebFetcher.PROPERTY_THREAD_ID, "UNIT_TESTS");
-		jobDataMap.put(WebFetcher.PROPERTY_JAVASCRIPT, false);
 		jobDataMap.put(WebFetcher.PROPERTY_EXCLUDE_DATA, new ArrayList<>());
 		jobDataMap.put(WebFetcher.PROPERTY_EXCLUDE_LINK, new ArrayList<>());
 		jobDataMap.put(WebFetcher.PROPERTY_PROXY_PORT, 80l);
@@ -82,21 +83,21 @@ public class WebFetcherLogicTest {
 		String rootUrl = "https://ec.europa.eu/digital-single-market";
 
 		jobDataMap.put(WebFetcher.PROPERTY_READ_ROBOT, false);
-		jobDataMap.put(WebFetcher.PROPERTY_URL, Arrays.asList(rootUrl));
+		jobDataMap.put(WebFetcher.PROPERTY_URLS, Arrays.asList(rootUrl));
 
 		String content = "<html>"
 				+ "<a href=\"" + rootUrl + "/page1\"></a>"
 				+ "<a href=\"" + rootUrl + "/page2\"></a>"
 				+ "</html>";
 
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl, rootUrl, content));
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl + "/page1", rootUrl, content));
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl + "/page2", rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl, rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl + "/page1", rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl + "/page2", rootUrl, content));
 
 		fetcherJob.execute(jobExecutionContext);
 
-		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl));
-		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl));
+		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver));
+		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver));
 
 		ArgumentCaptor<Map> argument = ArgumentCaptor.forClass(Map.class);
 		Mockito.verify(consumer, Mockito.times(3)).accept(argument.capture());
@@ -121,21 +122,21 @@ public class WebFetcherLogicTest {
 		String rootUrl = "https://ec.europa.eu/digital-single-market";
 
 		jobDataMap.put(WebFetcher.PROPERTY_READ_ROBOT, false);
-		jobDataMap.put(WebFetcher.PROPERTY_URL, Arrays.asList(rootUrl));
+		jobDataMap.put(WebFetcher.PROPERTY_URLS, Arrays.asList(rootUrl));
 
 		String content = "<html>"
 				+ "<a href=\"" + rootUrl + "/page1\"></a>"
 				+ "<a href=\"https://ec.europa.eu/digital-single/page2\"></a>"
 				+ "</html>";
 
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl, rootUrl, content));
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl + "/page1", rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl, rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl + "/page1", rootUrl, content));
 		;
 
 		fetcherJob.execute(jobExecutionContext);
 
-		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl));
-		Mockito.verify(urlController, Mockito.never()).getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl));
+		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver));
+		Mockito.verify(urlController, Mockito.never()).getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver));
 
 		ArgumentCaptor<Map> argument = ArgumentCaptor.forClass(Map.class);
 		Mockito.verify(consumer, Mockito.times(2)).accept(argument.capture());
@@ -153,7 +154,7 @@ public class WebFetcherLogicTest {
 		String rootUrl = "https://ec.europa.eu/digital-single-market";
 
 		jobDataMap.put(WebFetcher.PROPERTY_READ_ROBOT, false);
-		jobDataMap.put(WebFetcher.PROPERTY_URL, Arrays.asList(rootUrl));
+		jobDataMap.put(WebFetcher.PROPERTY_URLS, Arrays.asList(rootUrl));
 
 		String content = "<html>"
 				+ "<a href=\"" + rootUrl + "/page1\"></a>"
@@ -162,14 +163,14 @@ public class WebFetcherLogicTest {
 				+ "<a href=\"" + rootUrl + "/page2\"></a>"
 				+ "</html>";
 
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl, rootUrl, content));
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl + "/page1", rootUrl, content));
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl + "/page2", rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl, rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl + "/page1", rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl + "/page2", rootUrl, content));
 
 		fetcherJob.execute(jobExecutionContext);
 
-		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl));
-		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl));
+		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver));
+		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver));
 
 		ArgumentCaptor<Map> argument = ArgumentCaptor.forClass(Map.class);
 		Mockito.verify(consumer, Mockito.times(3)).accept(argument.capture());
@@ -194,7 +195,7 @@ public class WebFetcherLogicTest {
 		String rootUrl = "https://ec.europa.eu/digital-single-market";
 
 		jobDataMap.put(WebFetcher.PROPERTY_READ_ROBOT, false);
-		jobDataMap.put(WebFetcher.PROPERTY_URL, Arrays.asList("https://ec.europa.eu/digital-single-market/"));
+		jobDataMap.put(WebFetcher.PROPERTY_URLS, Arrays.asList("https://ec.europa.eu/digital-single-market/"));
 
 		String content = "<html>"
 				+ "<a href=\"" + rootUrl + "/page1\"></a>"
@@ -203,15 +204,15 @@ public class WebFetcherLogicTest {
 				+ "<a href=\"" + rootUrl + "/page2\"></a>"
 				+ "</html>";
 
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl, rootUrl, content));
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl + "/page1", rootUrl, content));
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl))).thenReturn(getMockResult(rootUrl + "/page2", rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl, rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl + "/page1", rootUrl, content));
+		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver))).thenReturn(getMockResult(rootUrl + "/page2", rootUrl, content));
 
 		fetcherJob.execute(jobExecutionContext);
 
-		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl));
-		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl));
-		Mockito.verify(urlController, Mockito.never()).getURL(Mockito.eq(rootUrl + "/page2/"), Mockito.eq(rootUrl));
+		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver));
+		Mockito.verify(urlController, Mockito.times(1)).getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver));
+		Mockito.verify(urlController, Mockito.never()).getURL(Mockito.eq(rootUrl + "/page2/"), Mockito.eq(rootUrl), Mockito.eq(chromeDriver));
 
 		ArgumentCaptor<Map> argument = ArgumentCaptor.forClass(Map.class);
 		Mockito.verify(consumer, Mockito.times(3)).accept(argument.capture());

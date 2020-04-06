@@ -1,5 +1,8 @@
 package eu.wajja.web.fetcher.controller;
 
+
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -8,68 +11,32 @@ import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.remote.RemoteWebDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.machinepublishers.jbrowserdriver.JBrowserDriver;
-import com.machinepublishers.jbrowserdriver.ProxyConfig;
-import com.machinepublishers.jbrowserdriver.ProxyConfig.Type;
-import com.machinepublishers.jbrowserdriver.Settings;
-import com.machinepublishers.jbrowserdriver.Settings.Builder;
-import com.machinepublishers.jbrowserdriver.Timezone;
-import com.machinepublishers.jbrowserdriver.UserAgent;
-
+import eu.wajja.web.fetcher.exception.WebDriverException;
 import eu.wajja.web.fetcher.model.Result;
 
 public class WebDriverController {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(WebDriverController.class);
 
-	private String proxyUser;
-	private String proxyPass;
-	private String proxyHost;
-	private Long proxyPort;
-	private String chromeDriver;
-	private Long timeout;
-
-	public WebDriverController(String proxyUser, String proxyPass, String proxyHost, Long proxyPort, String chromeDriver, Long timeout) {
-
-		this.proxyUser = proxyUser;
-		this.proxyPass = proxyPass;
-		this.proxyHost = proxyHost;
-		this.proxyPort = proxyPort;
-		this.chromeDriver = chromeDriver;
-		this.timeout = timeout;
-	}
-
-	public Result getURL(String currentUrl) {
-
-		Result result = new Result();
-		result.setUrl(currentUrl);
+	public Result getURL(Result result, String chromeDriver) throws MalformedURLException, WebDriverException {
 
 		WebDriver webDriver = null;
 
 		if (StringUtils.isEmpty(chromeDriver)) {
 
-			Builder settings = Settings.builder().timezone(Timezone.EUROPE_BRUSSELS)
-					.connectTimeout(timeout.intValue())
-					.maxConnections(50)
-					.quickRender(true)
-					.blockMedia(true)
-					.userAgent(UserAgent.CHROME)
-					.logger("ch.qos.logback.core.ConsoleAppender")
-					.processes(2)
-					.loggerLevel(java.util.logging.Level.INFO)
-					.hostnameVerification(false);
+			throw new WebDriverException("You need to specify a valid chrome driver. Either the path to the executable or a browserless/chrome instance");
 
-			if (proxyUser != null && proxyPass != null && proxyPort != null) {
+		} else if (chromeDriver.startsWith("http")) {
 
-				ProxyConfig proxyConfig = new ProxyConfig(Type.HTTP, proxyHost, proxyPort.intValue(), proxyUser, proxyPass);
-				settings.proxy(proxyConfig);
-				settings.javaOptions("-Djdk.http.auth.tunneling.disabledSchemes=");
-			}
+			ChromeOptions chromeOptions = new ChromeOptions();
+			chromeOptions.addArguments("--headless");
+			chromeOptions.addArguments("--no-sandbox");
 
-			webDriver = new JBrowserDriver(settings.build());
+			webDriver = new RemoteWebDriver(new URL(chromeDriver), chromeOptions);
 
 		} else {
 
@@ -97,13 +64,17 @@ public class WebDriverController {
 
 		try {
 
-			webDriver.get(currentUrl);
+			webDriver.get(result.getUrl());
 			String content = webDriver.getPageSource();
-			result.setCode(200);
-			result.setContent(content.getBytes());
+
+			if (content == null || content.isEmpty()) {
+				LOGGER.error("Current url {} is empty or null", result.getUrl());
+			} else {
+				result.setContent(content.getBytes());
+			}
 
 		} catch (Exception e) {
-			LOGGER.error("Failed to retrieve js page {}", currentUrl);
+			LOGGER.error("Failed to retrieve page {}", result.getUrl());
 		} finally {
 			webDriver.close();
 		}

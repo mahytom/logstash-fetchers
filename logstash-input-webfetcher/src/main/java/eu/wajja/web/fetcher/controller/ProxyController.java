@@ -24,7 +24,7 @@ public class ProxyController {
 
 	private Proxy proxy = null;
 
-	public ProxyController(String proxyUser, String proxyPass, String proxyHost, Long proxyPort, Boolean disableSSLcheck, String chromeDriver, Boolean waitJavascript, Long timeout) {
+	public ProxyController(String proxyUser, String proxyPass, String proxyHost, Long proxyPort, Boolean disableSSLcheck) {
 
 		if (proxyUser != null && proxyPass != null) {
 

@@ -16,6 +16,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Scanner;
 import java.util.Set;
 import java.util.UUID;
@@ -42,7 +43,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import eu.wajja.web.fetcher.controller.ProxyController;
 import eu.wajja.web.fetcher.controller.URLController;
-import eu.wajja.web.fetcher.controller.WebDriverController;
 import eu.wajja.web.fetcher.enums.Command;
 import eu.wajja.web.fetcher.model.Result;
 
@@ -59,7 +59,6 @@ public class FetcherJob implements Job {
 	private static final String METADATA_UUID = "uuid";
 	private static final String METADATA_STATUS = "status";
 	private static final String METADATA_CHILD = "childPages";
-	private static final String METADATA_EXTERNAL = "externalPages";
 	private static final String METADATA_COMMAND = "command";
 
 	private static final String LOGGER_THREAD = "thread";
@@ -79,13 +78,11 @@ public class FetcherJob implements Job {
 	private static final String ROBOTS = "robots.txt";
 
 	private ObjectMapper objectMapper = new ObjectMapper();
-	private URLController urlController;
-	private WebDriverController webDriverController;
+	private Random random = new Random();
 	private ProxyController proxyController;
 
 	private Long maxDepth;
 	private Long maxPages;
-	private Boolean waitJavascript;
 	private List<String> excludedDataRegex;
 	private List<String> excludedLinkRegex;
 	private Long maxPagesCount = 0l;
@@ -100,25 +97,25 @@ public class FetcherJob implements Job {
 	protected Map<String, Set<String>> allowedLocations = new HashMap<>();
 	protected Map<String, Set<String>> sitemapLocations = new HashMap<>();
 
+	private URLController urlController;
+	private ThreadPoolExecutor[] threadPoolExecutors;
+
 	@SuppressWarnings("unchecked")
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
 
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
 		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
-		List<String> initialUrls = (List<String>) dataMap.get(WebFetcher.PROPERTY_URL);
+		List<String> initialUrls = (List<String>) dataMap.get(WebFetcher.PROPERTY_URLS);
+		List<String> chromeThreads = (List<String>) dataMap.get(WebFetcher.PROPERTY_CHROME_DRIVERS);
 
 		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
 		Boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
-		Long threads = dataMap.getLong(WebFetcher.PROPERTY_THREADS);
-
-		ThreadPoolExecutor executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
 
 		this.fireId = context.getFireInstanceId();
 		this.maxDepth = dataMap.getLong(WebFetcher.PROPERTY_MAX_DEPTH);
 		this.maxPages = dataMap.getLong(WebFetcher.PROPERTY_MAX_PAGES);
 		this.threadId = dataMap.getString(WebFetcher.PROPERTY_THREAD_ID);
-		this.waitJavascript = dataMap.getBoolean(WebFetcher.PROPERTY_JAVASCRIPT);
 		this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
 		this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
 		this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
@@ -129,10 +126,7 @@ public class FetcherJob implements Job {
 					dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
 					dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
 					dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
-					dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK),
-					dataMap.getString(WebFetcher.PROPERTY_CHROME_DRIVER),
-					dataMap.getBoolean(WebFetcher.PROPERTY_JAVASCRIPT),
-					dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT));
+					dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
 		}
 
 		if (urlController == null) {
@@ -145,14 +139,14 @@ public class FetcherJob implements Job {
 
 		}
 
-		if (webDriverController == null && waitJavascript) {
+		if (threadPoolExecutors == null) {
 
-			webDriverController = new WebDriverController(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
-					dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
-					dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
-					dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
-					dataMap.getString(WebFetcher.PROPERTY_CHROME_DRIVER),
-					dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT));
+			threadPoolExecutors = new ThreadPoolExecutor[chromeThreads.size()];
+
+			for (int x = 0; x < chromeThreads.size(); x++) {
+				threadPoolExecutors[x] = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
+			}
+
 		}
 
 		initialUrls.stream().map(i -> getUrlString(i, i)).forEach(initialUrl -> {
@@ -170,7 +164,7 @@ public class FetcherJob implements Job {
 
 				if (m.find()) {
 					String robotUrl = m.group(0) + ROBOTS;
-					readRobot(initialUrl, robotUrl);
+					readRobot(initialUrl, robotUrl, chromeThreads.get(0));
 
 				} else {
 					LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
@@ -188,19 +182,25 @@ public class FetcherJob implements Job {
 
 				for (String url : urls) {
 
+					Integer randomValue = random.nextInt(chromeThreads.size());
 					Long currentDepth = depth;
-					executorService.execute(() -> extractUrl(consumer, url, initialUrl, currentDepth));
+
+					LOGGER.debug("Adding url {} to thread {}", url, randomValue);
+					threadPoolExecutors[randomValue].execute(() -> extractUrl(consumer, url, initialUrl, currentDepth, chromeThreads.get(randomValue)));
 
 				}
 
-				while (executorService.getActiveCount() > 0) {
+				for (int x = 0; x < threadPoolExecutors.length; x++) {
 
-					try {
-						LOGGER.info("Waiting for site {} to be finished, active threads left {}, queue {}/{}", initialUrl, executorService.getActiveCount(), processedSet.size(), processingSet.size());
-						Thread.sleep(500);
-					} catch (InterruptedException e) {
-						LOGGER.error("Failed to sleep in thread", e);
-						Thread.currentThread().interrupt();
+					while (threadPoolExecutors[x].getActiveCount() > 0) {
+
+						try {
+							LOGGER.info("Waiting for site {} to be finished, active threads left {}, queue {}/{}", initialUrl, threadPoolExecutors[x].getActiveCount(), processedSet.size(), processingSet.size());
+							Thread.sleep(500);
+						} catch (InterruptedException e) {
+							LOGGER.error("Failed to sleep in thread", e);
+							Thread.currentThread().interrupt();
+						}
 					}
 				}
 
@@ -216,9 +216,9 @@ public class FetcherJob implements Job {
 
 	}
 
-	private void readRobot(String initialUrl, String robotUrl) {
+	private void readRobot(String initialUrl, String robotUrl, String chromeDriver) {
 
-		Result result = urlController.getURL(robotUrl, initialUrl);
+		Result result = urlController.getURL(robotUrl, initialUrl, chromeDriver);
 
 		if (result.getContent() != null) {
 
@@ -277,7 +277,7 @@ public class FetcherJob implements Job {
 		}
 	}
 
-	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth) {
+	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth, String chromeDriver) {
 
 		String urlString = null;
 
@@ -319,7 +319,7 @@ public class FetcherJob implements Job {
 
 			}
 
-			Result result = urlController.getURL(urlString, rootUrl);
+			Result result = urlController.getURL(urlString, rootUrl, chromeDriver);
 
 			if (result != null && result.getContent() != null) {
 				extractContent(consumer, result, uuid, depth);
@@ -379,17 +379,7 @@ public class FetcherJob implements Job {
 
 		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
 
-			String bodyHtml = null;
-
-			if (waitJavascript) {
-				Result resultJavascript = webDriverController.getURL(result.getUrl());
-				bodyHtml = IOUtils.toString(resultJavascript.getContent(), StandardCharsets.UTF_8.name());
-				metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(resultJavascript.getContent()));
-
-			} else {
-				bodyHtml = IOUtils.toString(bytes, StandardCharsets.UTF_8.name());
-			}
-
+			String bodyHtml = IOUtils.toString(bytes, StandardCharsets.UTF_8.name());
 			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
 			Elements elements = document.getElementsByAttribute("href");
 
@@ -424,10 +414,7 @@ public class FetcherJob implements Job {
 					.sorted()
 					.collect(Collectors.toList());
 
-			List<String> externalPages = elements.stream().map(e -> e.attr("href")).filter(href -> (href.startsWith(HTTP) || href.startsWith(HTTPS)) && !href.startsWith(HTTP + simpleUrlString) && !href.startsWith(HTTPS + simpleUrlString)).collect(Collectors.toList());
-
 			metadata.put(METADATA_CHILD, new ArrayList<>(new HashSet<>(childPages)));
-			metadata.put(METADATA_EXTERNAL, new ArrayList<>(new HashSet<>(externalPages)));
 
 		}
 

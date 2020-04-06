@@ -39,15 +39,12 @@ public class WebFetcher implements Input {
 	private static final Logger LOGGER = LoggerFactory.getLogger(WebFetcher.class);
 
 	protected static final String PROPERTY_URLS = "urls";
-	protected static final String PROPERTY_URL = "url";
 	protected static final String PROPERTY_EXCLUDE_DATA = "excludeData";
 	protected static final String PROPERTY_EXCLUDE_LINK = "excludeLink";
 	protected static final String PROPERTY_DATAFOLDER = "dataFolder";
-	protected static final String PROPERTY_THREADS = "threads";
 	protected static final String PROPERTY_TIMEOUT = "timeout";
 	protected static final String PROPERTY_MAX_DEPTH = "maxdepth";
 	protected static final String PROPERTY_MAX_PAGES = "maxpages";
-	protected static final String PROPERTY_JAVASCRIPT = "waitJavascript";
 	protected static final String PROPERTY_SSL_CHECK = "sslcheck";
 	protected static final String PROPERTY_REFRESH_INTERVAL = "refreshInterval";
 	protected static final String PROPERTY_PROXY_HOST = "proxyHost";
@@ -57,7 +54,7 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_CRON = "cron";
 	protected static final String PROPERTY_CONSUMER = "consumer";
 	protected static final String PROPERTY_THREAD_ID = "threadId";
-	protected static final String PROPERTY_CHROME_DRIVER = "chromeDriver";
+	protected static final String PROPERTY_CHROME_DRIVERS = "chromeDrivers";
 	protected static final String PROPERTY_CRAWLER_USER_AGENT = "crawlerUserAgent";
 	protected static final String PROPERTY_CRAWLER_REFERER = "crawlerReferer";
 	protected static final String PROPERTY_READ_ROBOT = "readRobot";
@@ -71,7 +68,6 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<Long> CONFIG_TIMEOUT = PluginConfigSpec.numSetting(PROPERTY_TIMEOUT, 8000);
 	public static final PluginConfigSpec<Long> CONFIG_MAX_DEPTH = PluginConfigSpec.numSetting(PROPERTY_MAX_DEPTH, 0);
 	public static final PluginConfigSpec<Long> CONFIG_MAX_PAGES = PluginConfigSpec.numSetting(PROPERTY_MAX_PAGES, 0);
-	public static final PluginConfigSpec<Boolean> CONFIG_WAIT_JAVASCRIPT = PluginConfigSpec.booleanSetting(PROPERTY_JAVASCRIPT, false);
 	public static final PluginConfigSpec<Boolean> CONFIG_DISABLE_SSL_CHECK = PluginConfigSpec.booleanSetting(PROPERTY_SSL_CHECK, true);
 	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting(PROPERTY_REFRESH_INTERVAL, 86400l);
 	public static final PluginConfigSpec<String> CONFIG_PROXY_HOST = PluginConfigSpec.stringSetting(PROPERTY_PROXY_HOST);
@@ -79,8 +75,7 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<String> CONFIG_PROXY_USER = PluginConfigSpec.stringSetting(PROPERTY_PROXY_USER);
 	public static final PluginConfigSpec<String> CONFIG_PROXY_PASS = PluginConfigSpec.stringSetting(PROPERTY_PROXY_PASS);
 	public static final PluginConfigSpec<String> CONFIG_CRON = PluginConfigSpec.stringSetting(PROPERTY_CRON);
-	public static final PluginConfigSpec<Long> CONFIG_THREADS = PluginConfigSpec.numSetting(PROPERTY_THREADS, 1l);
-	public static final PluginConfigSpec<String> CONFIG_CHROME_DRIVER = PluginConfigSpec.stringSetting(PROPERTY_CHROME_DRIVER, null, false, false);
+	public static final PluginConfigSpec<List<Object>> CONFIG_CHROME_DRIVERS = PluginConfigSpec.arraySetting(PROPERTY_CHROME_DRIVERS, new ArrayList<>(), false, false);
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_USER_AGENT = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_USER_AGENT, "Wajja Crawler");
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_REFERER = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_REFERER, "http://wajja.eu/");
 	public static final PluginConfigSpec<Boolean> CONFIG_READ_ROBOT = PluginConfigSpec.booleanSetting(PROPERTY_READ_ROBOT, true);
@@ -113,9 +108,7 @@ public class WebFetcher implements Input {
 		jobDataMap.put(PROPERTY_MAX_DEPTH, config.get(CONFIG_MAX_DEPTH));
 		jobDataMap.put(PROPERTY_MAX_PAGES, config.get(CONFIG_MAX_PAGES));
 		jobDataMap.put(PROPERTY_TIMEOUT, config.get(CONFIG_TIMEOUT));
-		jobDataMap.put(PROPERTY_JAVASCRIPT, config.get(CONFIG_WAIT_JAVASCRIPT));
-		jobDataMap.put(PROPERTY_THREADS, config.get(CONFIG_THREADS));
-		jobDataMap.put(PROPERTY_CHROME_DRIVER, config.get(CONFIG_CHROME_DRIVER));
+		jobDataMap.put(PROPERTY_CHROME_DRIVERS, config.get(CONFIG_CHROME_DRIVERS).stream().map(url -> (String) url).collect(Collectors.toList()));
 		jobDataMap.put(PROPERTY_CRAWLER_REFERER, config.get(CONFIG_CRAWLER_REFERER));
 		jobDataMap.put(PROPERTY_CRAWLER_USER_AGENT, config.get(CONFIG_CRAWLER_USER_AGENT));
 		jobDataMap.put(PROPERTY_READ_ROBOT, config.get(CONFIG_READ_ROBOT));
@@ -138,7 +131,7 @@ public class WebFetcher implements Input {
 		try {
 
 			JobDataMap newJobDataMap = new JobDataMap(this.jobDataMap);
-			newJobDataMap.put(PROPERTY_URL, urls);
+			newJobDataMap.put(PROPERTY_URLS, urls);
 			newJobDataMap.put(PROPERTY_CONSUMER, consumer);
 			newJobDataMap.put(PROPERTY_THREAD_ID, threadId);
 
@@ -201,13 +194,11 @@ public class WebFetcher implements Input {
 				CONFIG_MAX_DEPTH,
 				CONFIG_TIMEOUT,
 				CONFIG_MAX_PAGES,
-				CONFIG_WAIT_JAVASCRIPT,
 				CONFIG_CRON,
-				CONFIG_THREADS,
 				CONFIG_READ_ROBOT,
 				CONFIG_CRAWLER_REFERER,
 				CONFIG_CRAWLER_USER_AGENT,
-				CONFIG_CHROME_DRIVER);
+				CONFIG_CHROME_DRIVERS);
 	}
 
 	@Override

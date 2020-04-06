@@ -56,11 +56,10 @@ public class FetcherJobTest {
 		String[] excludeLink = mapper.readValue("[\".*.((js)|(css)|(ico)|(whatsapp)).*\"]", String[].class);
 
 		jobDataMap = new JobDataMap();
-		jobDataMap.put(WebFetcher.PROPERTY_THREADS, 1l);
 		jobDataMap.put(WebFetcher.PROPERTY_MAX_DEPTH, 1l);
 		jobDataMap.put(WebFetcher.PROPERTY_MAX_PAGES, 10l);
+		jobDataMap.put(WebFetcher.PROPERTY_CHROME_DRIVERS, Arrays.asList("http://localhost:3000"));
 		jobDataMap.put(WebFetcher.PROPERTY_THREAD_ID, "UNIT_TESTS");
-		jobDataMap.put(WebFetcher.PROPERTY_JAVASCRIPT, false);
 		jobDataMap.put(WebFetcher.PROPERTY_EXCLUDE_DATA, Arrays.asList(excludeData));
 		jobDataMap.put(WebFetcher.PROPERTY_EXCLUDE_LINK, Arrays.asList(excludeLink));
 		jobDataMap.put(WebFetcher.PROPERTY_PROXY_PORT, 80l);
@@ -76,13 +75,13 @@ public class FetcherJobTest {
 
 		String url = "https://ec.europa.eu/belgium/sites/belgium/files/og_image/poster_drapeau_europeen.jpg";
 		jobDataMap.put(WebFetcher.PROPERTY_READ_ROBOT, false);
-		jobDataMap.put(WebFetcher.PROPERTY_URL, Arrays.asList(url));
+		jobDataMap.put(WebFetcher.PROPERTY_URLS, Arrays.asList(url));
 
 		Result result = new Result();
 		result.setContent("<html></html>".getBytes());
 		result.setUrl(url);
 
-		Mockito.when(urlController.getURL(Mockito.anyString(), Mockito.anyString())).thenReturn(result);
+		Mockito.when(urlController.getURL(Mockito.anyString(), Mockito.anyString(), Mockito.anyString())).thenReturn(result);
 
 		fetcherJob.execute(jobExecutionContext);
 
