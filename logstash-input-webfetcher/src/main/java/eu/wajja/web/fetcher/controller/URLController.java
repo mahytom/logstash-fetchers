@@ -70,7 +70,7 @@ public class URLController {
 
 				webDriverController.getURL(result, chromeDriver);
 
-			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == HttpURLConnection.HTTP_SEE_OTHER) {
+			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == HttpURLConnection.HTTP_SEE_OTHER) {
 
 				String newUrl = httpURLConnection.getHeaderField("Location");
 				closeConnection(httpURLConnection);
