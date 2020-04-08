@@ -27,6 +27,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.jsoup.Jsoup;
@@ -110,7 +111,7 @@ public class FetcherJob implements Job {
 		List<String> chromeThreads = (List<String>) dataMap.get(WebFetcher.PROPERTY_CHROME_DRIVERS);
 
 		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
-		Boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
+		boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
 
 		this.fireId = context.getFireInstanceId();
 		this.maxDepth = dataMap.getLong(WebFetcher.PROPERTY_MAX_DEPTH);
@@ -154,6 +155,7 @@ public class FetcherJob implements Job {
 			LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
 
 			String id = Base64.getEncoder().encodeToString(initialUrl.getBytes());
+			Map<String, String> legacyUrlMap = getLegacyUrlMap(dataFolder, id);
 
 			// Read the robot.txt first
 
@@ -186,7 +188,7 @@ public class FetcherJob implements Job {
 					Long currentDepth = depth;
 
 					LOGGER.debug("Adding url {} to thread {}", url, randomValue);
-					threadPoolExecutors[randomValue].execute(() -> extractUrl(consumer, url, initialUrl, currentDepth, chromeThreads.get(randomValue)));
+					threadPoolExecutors[randomValue].execute(() -> extractUrl(consumer, url, initialUrl, currentDepth, chromeThreads.get(randomValue), legacyUrlMap));
 
 				}
 
@@ -207,6 +209,8 @@ public class FetcherJob implements Job {
 				depth++;
 			}
 
+			saveLegacyUrlMap(dataFolder, id, legacyUrlMap);
+
 			// Compare to previously extracted content and delete delta
 			deleteOldDocuments(consumer, dataFolder, id);
 
@@ -214,6 +218,50 @@ public class FetcherJob implements Job {
 
 		LOGGER.info("Finished Thread {}", threadId);
 
+	}
+
+	private void saveLegacyUrlMap(String dataFolder, String id, Map<String, String> legacyUrlMap) {
+
+		if (dataFolder == null) {
+			return;
+		}
+
+		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_legacy.txt").toString());
+
+		try {
+			String json = objectMapper.writeValueAsString(legacyUrlMap);
+			Files.write(pathFile, json.getBytes());
+		} catch (IOException e) {
+			LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);
+		}
+	}
+
+	private Map<String, String> getLegacyUrlMap(String dataFolder, String id) {
+
+		if (dataFolder == null) {
+			return new HashMap<>();
+		}
+
+		Map<String, String> legacyUrlMap = new HashMap<>();
+		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_legacy.txt").toString());
+
+		if (pathFile.toFile().exists()) {
+
+			try {
+				legacyUrlMap = (Map<String, String>) objectMapper.readValue(pathFile.toFile(), Map.class);
+			} catch (IOException e) {
+
+				LOGGER.info("Failed to read legacy file, deleting it", e);
+
+				boolean deleted = pathFile.toFile().delete();
+				LOGGER.info("Deleted old fetcher data : {}", deleted, e);
+
+				legacyUrlMap = new HashMap<>();
+
+			}
+		}
+
+		return legacyUrlMap;
 	}
 
 	private void readRobot(String initialUrl, String robotUrl, String chromeDriver) {
@@ -277,7 +325,7 @@ public class FetcherJob implements Job {
 		}
 	}
 
-	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth, String chromeDriver) {
+	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth, String chromeDriver, Map<String, String> legacyUrlMap) {
 
 		String urlString = null;
 
@@ -322,7 +370,7 @@ public class FetcherJob implements Job {
 			Result result = urlController.getURL(urlString, rootUrl, chromeDriver);
 
 			if (result != null && result.getContent() != null) {
-				extractContent(consumer, result, uuid, depth);
+				extractContent(consumer, result, uuid, depth, legacyUrlMap);
 			}
 
 		} catch (Exception e) {
@@ -331,7 +379,7 @@ public class FetcherJob implements Job {
 
 	}
 
-	private List<String> extractContent(Consumer<Map<String, Object>> consumer, Result result, String uuid, Long depth) throws IOException {
+	private List<String> extractContent(Consumer<Map<String, Object>> consumer, Result result, String uuid, Long depth, Map<String, String> legacyUrlMap) throws IOException {
 
 		byte[] bytes = result.getContent();
 		Map<String, List<String>> headers = result.getHeaders();
@@ -363,8 +411,16 @@ public class FetcherJob implements Job {
 		if (excludedDataRegex.stream().noneMatch(ex -> result.getUrl().matches(ex)) && result.getUrl().startsWith(result.getRootUrl())) {
 
 			maxPagesCount++;
-			consumer.accept(metadata);
-			loggerMap.put(LOGGER_ACTION, "include_data");
+
+			String hex = DigestUtils.md5Hex(result.getContent());
+
+			if (legacyUrlMap.containsKey(result.getUrl()) && legacyUrlMap.get(result.getUrl()).equals(hex)) {
+				loggerMap.put(LOGGER_ACTION, "exclude_data");
+			} else {
+				consumer.accept(metadata);
+				loggerMap.put(LOGGER_ACTION, "include_data");
+				legacyUrlMap.put(result.getUrl(), hex);
+			}
 
 		} else {
 			loggerMap.put(LOGGER_ACTION, "exclude_data");
