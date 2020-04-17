@@ -55,10 +55,6 @@ input {
 }
 ```
 
-## Confluence Plugin
-
-Work in progress
-
 
 ## Initial configuration
 

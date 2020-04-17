@@ -24,6 +24,7 @@ import com.atlassian.confluence.api.service.exceptions.NotFoundException;
 import com.atlassian.confluence.rest.client.RemotePersonServiceImpl;
 import com.atlassian.confluence.rest.client.RemotePersonServiceImpl.RemotePersonFinderImpl;
 import com.atlassian.confluence.rest.client.remoteservice.people.RemoteGroupServiceImpl;
+import com.sun.jersey.api.client.ClientHandlerException;
 
 import eu.wajja.input.fetcher.enums.Command;
 
@@ -54,39 +55,43 @@ public class ConfluenceGroupFetcher implements Job {
 
 		while (!groupPromises.getResults().isEmpty()) {
 
-			groupPromises.getResults().parallelStream().forEach(group -> {
+			try {
+				groupPromises.getResults().stream().forEach(group -> {
 
-				try {
-					LOGGER.info("Searching group {}", group);
-					List<String> users = getUsers(remotePersonServiceImpl, group, batchSize);
+					try {
+						LOGGER.info("Searching group {}", group);
+						List<String> users = getUsers(remotePersonServiceImpl, group, batchSize);
 
-					if (!users.isEmpty()) {
-						groupUser.put(group.getName(), users);
+						if (!users.isEmpty()) {
+							groupUser.put(group.getName(), users);
+						}
+
+					} catch (NotFoundException e) {
+						LOGGER.info("Failed to find group", e);
 					}
+				});
 
-				} catch (NotFoundException e) {
-					LOGGER.info("Failed to find group", e);
-				}
-			});
+			} catch (ClientHandlerException e) {
+				LOGGER.info("Failed to retrieve group", e);
+			}
 
 			size = size + batchSize.intValue();
 			pageRequestGroups = new SimplePageRequest(size, batchSize.intValue());
 			groupPromises = groupServiceImpl.find().fetchMany(pageRequestGroups).claim();
+
 		}
 
-		groupUser.entrySet().stream().forEach(g -> {
+		groupUser.entrySet().stream().forEach(g ->
 
-			g.getValue().stream().forEach(u -> {
+		g.getValue().stream().forEach(u -> {
 
-				if (!userGroup.containsKey(u)) {
-					userGroup.put(u, new ArrayList<>());
-				}
+			if (!userGroup.containsKey(u)) {
+				userGroup.put(u, new ArrayList<>());
+			}
 
-				userGroup.get(u).add(g.getKey());
+			userGroup.get(u).add(g.getKey());
 
-			});
-
-		});
+		}));
 
 		userGroup.entrySet().stream().forEach(user -> {
 
@@ -94,7 +99,7 @@ public class ConfluenceGroupFetcher implements Job {
 
 			metadata.put(METADATA_REFERENCE, user.getKey());
 			metadata.put(METADATA_GROUPS, user.getValue());
-			metadata.put(METADATA_COMMAND, Command.USER.toString());
+			metadata.put(METADATA_COMMAND, Command.USER.name());
 
 			consumer.accept(metadata);
 

@@ -18,8 +18,6 @@ import org.quartz.JobDataMap;
 import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import com.atlassian.confluence.api.model.pagination.PageRequest;
 import com.atlassian.confluence.api.model.pagination.PageResponse;
@@ -37,8 +35,6 @@ import eu.wajja.input.fetcher.controller.ConfluenceGroupFetcher;
 
 @RunWith(MockitoJUnitRunner.class)
 public class ConfluenceGroupFetcherTest {
-
-	private static final Logger LOGGER = LoggerFactory.getLogger(ConfluenceGroupFetcherTest.class);
 
 	@InjectMocks
 	private ConfluenceGroupFetcher confluenceGroupFetcher;
@@ -82,14 +78,12 @@ public class ConfluenceGroupFetcherTest {
 	@Mock
 	private PageResponse<Person> pageUserEmptyResponse;
 
-	private JobDataMap jobDataMap;
-
 	@Before
 	public void intialize() {
 
 		Mockito.when(context.getJobDetail()).thenReturn(jobDetail);
 
-		jobDataMap = new JobDataMap();
+		JobDataMap jobDataMap = new JobDataMap();
 		jobDataMap.put("remotePersonServiceImpl", remotePersonServiceImpl);
 		jobDataMap.put("remoteGroupServiceImpl", remoteGroupServiceImpl);
 		jobDataMap.put("consumer", consumer);
@@ -151,7 +145,7 @@ public class ConfluenceGroupFetcherTest {
 		Assert.assertTrue(((String) metadata.get("reference")).equals("USER_001"));
 
 		Assert.assertTrue(metadata.containsKey("groups"));
-		Assert.assertTrue(((List<String>) metadata.get("groups")).get(0).equals("group_002"));
+		Assert.assertTrue(((List<String>) metadata.get("groups")).get(0).equals("group_001"));
 	}
 
 }
