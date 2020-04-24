@@ -95,6 +95,8 @@ public class ConfluenceDataFetcher implements Job {
 	private static final String LOGGER_INCLUDE_DATA = "include_data";
 	private static final String LOGGER_EXCLUDE_DATA = "exclude_data";
 
+	private static final String FETCHED_DATA_FOLDER = "/fetched-data/";
+
 	private ObjectMapper objectMapper = new ObjectMapper();
 	private UrlHelper urlHelper = new UrlHelper();
 
@@ -104,6 +106,7 @@ public class ConfluenceDataFetcher implements Job {
 	private Expansion expansionMetadata = new Expansion("metadata");
 	private Expansion expansionVersion = new Expansion("version");
 	private Expansion expansionContainer = new Expansion("container");
+	private Expansion expansionAnscestors = new Expansion("ancestors");
 
 	private RemoteSpaceServiceImpl remoteSpaceServiceImpl;
 	private RemoteContentServiceImpl remoteContentServiceImpl;
@@ -195,7 +198,7 @@ public class ConfluenceDataFetcher implements Job {
 
 	private void saveHistoryFile(String id, Map<String, String> historyMap, Command command) {
 
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_").append(command.name()).append(".json").toString());
+		Path pathFile = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).append(id).append("_").append(command.name()).append(".json").toString());
 
 		try {
 			String json = objectMapper.writeValueAsString(historyMap);
@@ -209,7 +212,18 @@ public class ConfluenceDataFetcher implements Job {
 	@SuppressWarnings("unchecked")
 	private Map<String, String> getHistoryFile(String id, Command command) {
 
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_").append(command.name()).append(".json").toString());
+		Path pathFolder = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).toString());
+
+		if (!pathFolder.toFile().exists()) {
+
+			try {
+				Files.createDirectory(pathFolder);
+			} catch (IOException e) {
+				LOGGER.info("Failed to create data folder : {}", pathFolder, e);
+			}
+		}
+
+		Path pathFile = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).append(id).append("_").append(command.name()).append(".json").toString());
 
 		if (pathFile.toFile().exists()) {
 
@@ -220,6 +234,8 @@ public class ConfluenceDataFetcher implements Job {
 			} catch (IOException e) {
 				LOGGER.info("Failed to read history file : {}", pathFile, e);
 			}
+		} else {
+			LOGGER.info("Could not read file {}", pathFile);
 		}
 
 		return new HashMap<>();
@@ -234,7 +250,7 @@ public class ConfluenceDataFetcher implements Job {
 		try {
 
 			PageResponse<Content> pageResponse = remoteContentServiceImpl
-					.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer)
+					.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
 					.withStatus(contentStatus)
 					.withSpace(space)
 					.fetchMany(contentType, pageRequest)
@@ -270,10 +286,10 @@ public class ConfluenceDataFetcher implements Job {
 						metadata.put(METADATA_SPACE_NAME, space.getName());
 						metadata.put(METADATA_SPACE_URL, new StringBuilder(url).append(PREFIX_SPACE).append(space.getKey()).toString());
 
-						Permissions permissions = addAllRestrictions(page, command);
+						Permissions permissions = addAllRestrictions(page, command, space);
 
-						metadata.put(METADATA_ACL_USERS, permissions.getUsers());
-						metadata.put(METADATA_ACL_GROUPS, permissions.getGroups());
+						metadata.put(METADATA_ACL_USERS, new ArrayList<>(permissions.getUsers()));
+						metadata.put(METADATA_ACL_GROUPS, new ArrayList<>(permissions.getGroups()));
 
 						List<Content> attachments = getAttachments(page);
 						attachments.stream().forEach(attach -> {
@@ -333,7 +349,7 @@ public class ConfluenceDataFetcher implements Job {
 				size = size + batchSize.intValue();
 				pageRequest = new SimplePageRequest(size, batchSize.intValue());
 				pageResponse = remoteContentServiceImpl
-						.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer)
+						.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
 						.withStatus(contentStatus)
 						.withSpace(space)
 						.fetchMany(contentType, pageRequest)
@@ -371,8 +387,8 @@ public class ConfluenceDataFetcher implements Job {
 		metadata.put(METADATA_PARENT_NAME, parent.getTitle());
 		metadata.put(METADATA_PARENT_URL, new StringBuilder(url).append(PREFIX_PAGE).append(parent.getId().asLong()).toString());
 
-		metadata.put(METADATA_ACL_USERS, permissions.getUsers());
-		metadata.put(METADATA_ACL_GROUPS, permissions.getGroups());
+		metadata.put(METADATA_ACL_USERS, new ArrayList<>(permissions.getUsers()));
+		metadata.put(METADATA_ACL_GROUPS, new ArrayList<>(permissions.getGroups()));
 
 		Map<LinkType, Link> links = attach.getLinks();
 		Link link = links.entrySet().stream().filter(x -> x.getKey().equals(LinkType.DOWNLOAD)).map(Entry::getValue).findFirst().orElse(null);
@@ -463,34 +479,18 @@ public class ConfluenceDataFetcher implements Job {
 
 	}
 
-	private Permissions addAllRestrictions(Content content, Command command) {
+	private Permissions addAllRestrictions(Content content, Command command, Space space) {
 
-		List<String> users = new ArrayList<>();
-		List<String> groups = new ArrayList<>();
+		Permissions permissions = new Permissions();
 
 		try {
 
 			if (!command.equals(Command.DELETE)) {
 
-				PageRequest pageRequest = new SimplePageRequest(0, 10);
+				getContentPermissions(content, permissions);
 
-				ContentRestrictionsPageResponse contentRestrictionsPageResponse = remoteContentRestrictionServiceImpl.getRestrictions(content.getId(), pageRequest).claim();
-
-				contentRestrictionsPageResponse.getResults().stream().forEach(perm -> {
-
-					users.addAll(perm.getRestrictions().entrySet().stream().filter(r -> r.getKey().equals(SubjectType.USER))
-							.flatMap(r -> r.getValue().getResults().stream())
-							.map(s -> (Person) s)
-							.map(p -> p.getOptionalUsername().getOrNull())
-							.filter(Objects::nonNull)
-							.collect(Collectors.toList()));
-
-					groups.addAll(perm.getRestrictions().entrySet().stream()
-							.filter(r -> r.getKey().equals(SubjectType.GROUP))
-							.flatMap(r -> r.getValue().getResults().stream())
-							.map(Subject::getDisplayName)
-							.collect(Collectors.toList()));
-
+				content.getAncestors().stream().forEach(ancestor -> {
+					getContentPermissions(ancestor, permissions);
 				});
 
 			}
@@ -499,11 +499,31 @@ public class ConfluenceDataFetcher implements Job {
 			LOGGER.error("Failed to read page permissions", e);
 		}
 
-		Permissions permissions = new Permissions();
-		permissions.setUsers(users);
-		permissions.setGroups(groups);
-
 		return permissions;
+	}
+
+	private void getContentPermissions(Content content, Permissions permissions) {
+
+		PageRequest pageRequest = new SimplePageRequest(0, 10);
+
+		ContentRestrictionsPageResponse contentRestrictionsPageResponse = remoteContentRestrictionServiceImpl.getRestrictions(content.getId(), pageRequest).claim();
+
+		contentRestrictionsPageResponse.getResults().stream().forEach(perm -> {
+
+			permissions.getUsers().addAll(perm.getRestrictions().entrySet().stream().filter(r -> r.getKey().equals(SubjectType.USER))
+					.flatMap(r -> r.getValue().getResults().stream())
+					.map(s -> (Person) s)
+					.map(p -> p.getOptionalUsername().getOrNull())
+					.filter(Objects::nonNull)
+					.collect(Collectors.toList()));
+
+			permissions.getGroups().addAll(perm.getRestrictions().entrySet().stream()
+					.filter(r -> r.getKey().equals(SubjectType.GROUP))
+					.flatMap(r -> r.getValue().getResults().stream())
+					.map(Subject::getDisplayName)
+					.collect(Collectors.toList()));
+
+		});
 	}
 
 	private List<Space> getSpaces(List<String> sites) {

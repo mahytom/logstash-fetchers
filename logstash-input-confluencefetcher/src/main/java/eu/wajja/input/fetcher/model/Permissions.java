@@ -1,26 +1,26 @@
 package eu.wajja.input.fetcher.model;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 
 public class Permissions {
 
-	private List<String> users = new ArrayList<>();
-	private List<String> groups = new ArrayList<>();
+	private Set<String> users = new HashSet<>();
+	private Set<String> groups = new HashSet<>();
 
-	public List<String> getUsers() {
+	public Set<String> getUsers() {
 		return users;
 	}
 
-	public void setUsers(List<String> users) {
+	public void setUsers(Set<String> users) {
 		this.users = users;
 	}
 
-	public List<String> getGroups() {
+	public Set<String> getGroups() {
 		return groups;
 	}
 
-	public void setGroups(List<String> groups) {
+	public void setGroups(Set<String> groups) {
 		this.groups = groups;
 	}
 
