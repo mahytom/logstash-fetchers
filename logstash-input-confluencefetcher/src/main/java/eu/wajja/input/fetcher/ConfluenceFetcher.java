@@ -10,6 +10,8 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import javax.xml.namespace.QName;
+
 import org.quartz.CronScheduleBuilder;
 import org.quartz.JobBuilder;
 import org.quartz.JobDataMap;
@@ -39,6 +41,8 @@ import co.elastic.logstash.api.PluginConfigSpec;
 import eu.wajja.input.fetcher.config.SchedulerBuilder;
 import eu.wajja.input.fetcher.controller.ConfluenceDataFetcher;
 import eu.wajja.input.fetcher.controller.ConfluenceGroupFetcher;
+import eu.wajja.input.fetcher.soap.confluence.ConfluenceSoapService;
+import eu.wajja.input.fetcher.soap.confluence.ConfluenceSoapServiceServiceLocator;
 
 /**
  * Fetches pages from a confluence page
@@ -187,6 +191,17 @@ public class ConfluenceFetcher implements Input {
 
 				try {
 
+					String confluenceLocation = this.baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2?wsdl";
+					String confluenceService = "ConfluenceSoapServiceService";
+					String confluenceServicepoint = this.baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2";
+
+					QName confluenceQname = new QName(confluenceServicepoint, confluenceService);
+					ConfluenceSoapServiceServiceLocator serviceLocator = new ConfluenceSoapServiceServiceLocator(confluenceLocation, confluenceQname, this.baseUrl);
+					serviceLocator.setConfluenceserviceV2EndpointAddress(confluenceServicepoint);
+
+					ConfluenceSoapService soapService = serviceLocator.getConfluenceserviceV2();
+					String soapToken = soapService.login(username, password);
+
 					JobDataMap newJobDataMap = new JobDataMap();
 					newJobDataMap.put("remoteSpaceServiceImpl", new RemoteSpaceServiceImpl(provider, this.executorData));
 					newJobDataMap.put("remoteContentServiceImpl", new RemoteContentServiceImpl(provider, this.executorData));
@@ -205,6 +220,9 @@ public class ConfluenceFetcher implements Input {
 					newJobDataMap.put("dataSpaceExclude", this.dataSpaceExclude);
 					newJobDataMap.put("dataFolder", this.dataFolder);
 					newJobDataMap.put("dataSyncThreadSize", this.dataSyncThreadSize);
+
+					newJobDataMap.put("soapService", soapService);
+					newJobDataMap.put("soapToken", soapToken);
 
 					String uuid = UUID.randomUUID().toString();
 

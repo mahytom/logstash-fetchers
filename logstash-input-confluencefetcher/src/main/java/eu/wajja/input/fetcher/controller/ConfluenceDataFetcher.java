@@ -6,6 +6,7 @@ import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.rmi.RemoteException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
@@ -47,11 +48,15 @@ import com.atlassian.confluence.api.model.permissions.ContentRestrictionsPageRes
 import com.atlassian.confluence.rest.client.RemoteAttachmentServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteContentRestrictionServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteContentServiceImpl;
+import com.atlassian.confluence.rest.client.RemoteSpacePropertyServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteSpaceService.RemoteSpaceFinder;
 import com.atlassian.confluence.rest.client.RemoteSpaceServiceImpl;
+import com.atlassian.confluence.rpc.soap.beans.RemoteContentPermission;
+import com.atlassian.confluence.rpc.soap.beans.RemoteSpacePermissionSet;
 
 import eu.wajja.input.fetcher.enums.Command;
 import eu.wajja.input.fetcher.model.Permissions;
+import eu.wajja.input.fetcher.soap.confluence.ConfluenceSoapService;
 import eu.wajja.input.fetcher.utils.UrlHelper;
 
 public class ConfluenceDataFetcher implements Job {
@@ -107,8 +112,10 @@ public class ConfluenceDataFetcher implements Job {
 	private Expansion expansionVersion = new Expansion("version");
 	private Expansion expansionContainer = new Expansion("container");
 	private Expansion expansionAnscestors = new Expansion("ancestors");
+	private Expansion expansionPermissions = new Expansion("permissions");
 
 	private RemoteSpaceServiceImpl remoteSpaceServiceImpl;
+	private RemoteSpacePropertyServiceImpl remoteSpacePropertyServiceImpl;
 	private RemoteContentServiceImpl remoteContentServiceImpl;
 	private RemoteContentRestrictionServiceImpl remoteContentRestrictionServiceImpl;
 	private RemoteAttachmentServiceImpl remoteAttachmentServiceImpl;
@@ -131,6 +138,7 @@ public class ConfluenceDataFetcher implements Job {
 		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get("consumer");
 
 		this.remoteSpaceServiceImpl = (RemoteSpaceServiceImpl) dataMap.get("remoteSpaceServiceImpl");
+		this.remoteSpacePropertyServiceImpl = (RemoteSpacePropertyServiceImpl) dataMap.get("remoteSpacePropertyServiceImpl");
 		this.remoteContentServiceImpl = (RemoteContentServiceImpl) dataMap.get("remoteContentServiceImpl");
 		this.remoteContentRestrictionServiceImpl = (RemoteContentRestrictionServiceImpl) dataMap.get("remoteContentRestrictionServiceImpl");
 		this.remoteAttachmentServiceImpl = (RemoteAttachmentServiceImpl) dataMap.get("remoteAttachmentServiceImpl");
@@ -149,6 +157,9 @@ public class ConfluenceDataFetcher implements Job {
 		this.threads = (Long) dataMap.get("dataSyncThreadSize");
 		this.executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
 
+		ConfluenceSoapService soapService = (ConfluenceSoapService) dataMap.get("soapService");
+		String soapToken = dataMap.getString("soapToken");
+
 		/** Get spaces and start reading from them **/
 
 		List<String> dataSpaceExclude = (List<String>) dataMap.getOrDefault("dataSpaceExclude", new ArrayList<>());
@@ -157,37 +168,53 @@ public class ConfluenceDataFetcher implements Job {
 
 		spaces.stream().forEach(space -> {
 
-			if (dataSpaceExclude != null && !dataSpaceExclude.isEmpty() && dataSpaceExclude.stream().anyMatch(x -> space.getName().toLowerCase().matches(x.toLowerCase()))) {
-				LOGGER.info("Excluding space {}", space.getName());
-				return;
-			} else {
-				LOGGER.info("Include space {}", space.getName());
-			}
+			try {
+				List<String> spacePermissions = new ArrayList<>();
 
-			/**
-			 * Each space has an index, so we can keep track of previously ingested files
-			 **/
+				RemoteSpacePermissionSet remoteSpacePermissionSet = soapService.getSpacePermissionSet(soapToken, space.getKey(), "VIEWSPACE");
+				RemoteContentPermission[] remoteContentPermissions = remoteSpacePermissionSet.getSpacePermissions();
 
-			String id = Base64.getEncoder().encodeToString(space.getKey().getBytes());
-			Map<String, String> historyAddMap = new HashMap<>();
-			Map<String, String> historyDeleteMap = new HashMap<>();
+				for (RemoteContentPermission remoteContentPermission : remoteContentPermissions) {
+					if (remoteContentPermission.getGroupName() != null) {
+						spacePermissions.add(remoteContentPermission.getGroupName());
+					}
+				}
 
-			if (dataFolder != null) {
+				if (dataSpaceExclude != null && !dataSpaceExclude.isEmpty() && dataSpaceExclude.stream().anyMatch(x -> space.getName().toLowerCase().matches(x.toLowerCase()))) {
+					LOGGER.info("Excluding space {}", space.getName());
+					return;
+				} else {
+					LOGGER.info("Include space {}", space.getName());
+				}
 
-				historyAddMap = getHistoryFile(id, Command.ADD);
-				historyDeleteMap = getHistoryFile(id, Command.DELETE);
-			}
+				/**
+				 * Each space has an index, so we can keep track of previously ingested files
+				 **/
 
-			/** Data Extraction **/
-			extractSpaceContent(consumer, username, password, url, space, ContentStatus.CURRENT, Command.ADD, historyAddMap);
-			extractSpaceContent(consumer, username, password, url, space, ContentStatus.TRASHED, Command.DELETE, historyDeleteMap);
+				String id = Base64.getEncoder().encodeToString(space.getKey().getBytes());
+				Map<String, String> historyAddMap = new HashMap<>();
+				Map<String, String> historyDeleteMap = new HashMap<>();
 
-			/** Save the new history **/
+				if (dataFolder != null) {
 
-			if (dataFolder != null) {
+					historyAddMap = getHistoryFile(id, Command.ADD);
+					historyDeleteMap = getHistoryFile(id, Command.DELETE);
+				}
 
-				saveHistoryFile(id, historyAddMap, Command.ADD);
-				saveHistoryFile(id, historyDeleteMap, Command.DELETE);
+				/** Data Extraction **/
+				extractSpaceContent(consumer, username, password, url, space, ContentStatus.CURRENT, Command.ADD, historyAddMap, spacePermissions);
+				extractSpaceContent(consumer, username, password, url, space, ContentStatus.TRASHED, Command.DELETE, historyDeleteMap, spacePermissions);
+
+				/** Save the new history **/
+
+				if (dataFolder != null) {
+
+					saveHistoryFile(id, historyAddMap, Command.ADD);
+					saveHistoryFile(id, historyDeleteMap, Command.DELETE);
+				}
+
+			} catch (RemoteException e) {
+				LOGGER.error("Failed to get space permisisons", e);
 			}
 
 		});
@@ -241,7 +268,7 @@ public class ConfluenceDataFetcher implements Job {
 		return new HashMap<>();
 	}
 
-	private void extractSpaceContent(Consumer<Map<String, Object>> consumer, String username, String password, String url, Space space, ContentStatus contentStatus, Command command, Map<String, String> historyMap) {
+	private void extractSpaceContent(Consumer<Map<String, Object>> consumer, String username, String password, String url, Space space, ContentStatus contentStatus, Command command, Map<String, String> historyMap, List<String> spacePermissions) {
 
 		int size = 0;
 		ContentType contentType = ContentType.PAGE;
@@ -286,7 +313,7 @@ public class ConfluenceDataFetcher implements Job {
 						metadata.put(METADATA_SPACE_NAME, space.getName());
 						metadata.put(METADATA_SPACE_URL, new StringBuilder(url).append(PREFIX_SPACE).append(space.getKey()).toString());
 
-						Permissions permissions = addAllRestrictions(page, command, space);
+						Permissions permissions = addAllRestrictions(page, command, spacePermissions);
 
 						metadata.put(METADATA_ACL_USERS, new ArrayList<>(permissions.getUsers()));
 						metadata.put(METADATA_ACL_GROUPS, new ArrayList<>(permissions.getGroups()));
@@ -479,20 +506,17 @@ public class ConfluenceDataFetcher implements Job {
 
 	}
 
-	private Permissions addAllRestrictions(Content content, Command command, Space space) {
+	private Permissions addAllRestrictions(Content content, Command command, List<String> spacePermissions) {
 
 		Permissions permissions = new Permissions();
+		permissions.getGroups().addAll(spacePermissions);
 
 		try {
 
 			if (!command.equals(Command.DELETE)) {
 
 				getContentPermissions(content, permissions);
-
-				content.getAncestors().stream().forEach(ancestor -> {
-					getContentPermissions(ancestor, permissions);
-				});
-
+				content.getAncestors().stream().forEach(ancestor -> getContentPermissions(ancestor, permissions));
 			}
 
 		} catch (Exception e) {
@@ -531,7 +555,7 @@ public class ConfluenceDataFetcher implements Job {
 		int size = 0;
 		PageRequest pageRequest = new SimplePageRequest(size, batchSize.intValue());
 
-		RemoteSpaceFinder remoteSpaceFinder = remoteSpaceServiceImpl.find();
+		RemoteSpaceFinder remoteSpaceFinder = remoteSpaceServiceImpl.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionPermissions);
 
 		if (!sites.isEmpty()) {
 			remoteSpaceFinder.withKeys(sites.toArray(new String[sites.size()]));
