@@ -27,3 +27,4 @@ gradle.properties
 *.zip
 *.class
 test.properties
+*IntegrationTest.java
