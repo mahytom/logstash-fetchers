@@ -1,4 +1,4 @@
-package eu.wajja.web.fetcher;
+package eu.wajja.web.controller;
 
 import java.io.IOException;
 import java.net.URL;

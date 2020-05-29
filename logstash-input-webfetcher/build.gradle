@@ -21,24 +21,8 @@ pluginInfo.pluginClass     = "WebFetcher"
 pluginInfo.pluginName      = "webfetcher" // must match the @LogstashPlugin annotation in the main plugin class
 // ===========================================================================
 
-
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
-
-
-buildDir = "build/gradle"
-eclipse {
-  classpath {
-    defaultOutputDir = file('build/eclipse')
-    file.whenMerged {
-      entries.each { entry ->
-        if (entry.kind == 'src' && entry.hasProperty('output')) {
-          entry.output = entry.output.replace('bin/', "build/eclipse/")
-        }
-      }
-    }
-  }
-}
 
 buildscript {
     repositories {
@@ -78,7 +62,6 @@ dependencies {
    	compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.0.1'
    	compile group: 'org.quartz-scheduler', name: 'quartz', version: '2.3.2'
    	compile group: 'org.codehaus.janino', name: 'janino', version: '3.1.0'
-  // 	testCompile group: 'org.mockito', name: 'mockito-all', version: '1.10.19'
    	
     compile fileTree(dir: LOGSTASH_CORE_PATH, include: "**/logstash-core-?.?.?.jar")
 
