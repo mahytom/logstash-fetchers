@@ -58,7 +58,6 @@ public class URLController {
 			httpURLConnection.connect();
 
 			int code = httpURLConnection.getResponseCode();
-            System.out.println("-------------> code : "+code);
 			String message = httpURLConnection.getResponseMessage();
 			result.setCode(code);
 			result.setMessage(message);
@@ -138,7 +137,10 @@ public class URLController {
         }
         return  null;
     }
-
+    
+    public void setTimeout(Long timeOut){
+        this.timeout = timeOut;
+    }
 
 
 
