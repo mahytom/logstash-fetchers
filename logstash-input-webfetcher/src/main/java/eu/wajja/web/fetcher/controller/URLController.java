@@ -3,6 +3,7 @@ package eu.wajja.web.fetcher.controller;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.Proxy;
 import java.net.SocketTimeoutException;
 import java.net.URL;
@@ -35,12 +36,12 @@ public class URLController {
 
 	public Result getURL(String currentUrl, String initialUrl, String chromeDriver) {
 
-		HttpURLConnection httpURLConnection = null;
 		Result result = new Result();
+        HttpURLConnection httpURLConnection = null;
 
 		try {
 
-			URL url = new URL(currentUrl);
+            URL url = this.createUrl(currentUrl);
 
 			if (proxy == null) {
 				httpURLConnection = (HttpURLConnection) url.openConnection();
@@ -49,7 +50,7 @@ public class URLController {
 			}
 
 			httpURLConnection.setConnectTimeout(timeout.intValue());
-			httpURLConnection.setReadTimeout(timeout.intValue());
+            httpURLConnection.setReadTimeout(timeout.intValue());
 			httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
 			httpURLConnection.addRequestProperty("User-Agent", userAgent);
 			httpURLConnection.addRequestProperty("Referer", referer);
@@ -63,12 +64,19 @@ public class URLController {
 			result.setUrl(currentUrl);
 			result.setRootUrl(initialUrl);
 
-			if (code == HttpURLConnection.HTTP_OK) {
+            if (code == HttpURLConnection.HTTP_OK) {
+                /*If pdf, do not use the webdriver, which was only used intitially to handle js*/
+                if (currentUrl.endsWith("pdf")) {
+                    LOGGER.debug("Found pdf, downloading {}",currentUrl);
+                    result.setContent(IOUtils.toByteArray(httpURLConnection.getInputStream()));
+                }
+                else {
 
-				closeConnection(httpURLConnection);
-				result.setHeaders(httpURLConnection.getHeaderFields());
+                    closeConnection(httpURLConnection);
+                    result.setHeaders(httpURLConnection.getHeaderFields());
+                    webDriverController.getURL(result, chromeDriver);
 
-				webDriverController.getURL(result, chromeDriver);
+                }
 
 			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == HttpURLConnection.HTTP_SEE_OTHER) {
 
@@ -120,5 +128,20 @@ public class URLController {
 
 		return new byte[0];
 	}
+
+    public URL createUrl(String currentUrl){
+        try{
+            return  new URL(currentUrl);
+        }catch (MalformedURLException mue){
+            LOGGER.error ("Malformed url : {}", currentUrl, mue);
+        }
+        return  null;
+    }
+    
+    public void setTimeout(Long timeOut){
+        this.timeout = timeOut;
+    }
+
+
 
 }
