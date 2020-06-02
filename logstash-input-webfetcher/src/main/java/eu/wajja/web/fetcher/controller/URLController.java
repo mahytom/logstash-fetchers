@@ -18,133 +18,133 @@ import eu.wajja.web.fetcher.model.Result;
 
 public class URLController {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(URLController.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(URLController.class);
 
-    private Proxy proxy;
-    private Long timeout;
-    private String userAgent;
-    private String referer;
-    private WebDriverController webDriverController = new WebDriverController();
+	private Proxy proxy;
+	private Long timeout;
+	private String userAgent;
+	private String referer;
+	private WebDriverController webDriverController = new WebDriverController();
 
-    public URLController(Proxy proxy, Long timeout, String userAgent, String referer) {
+	public URLController(Proxy proxy, Long timeout, String userAgent, String referer) {
 
-        this.proxy = proxy;
-        this.timeout = timeout;
-        this.userAgent = userAgent;
-        this.referer = referer;
-    }
+		this.proxy = proxy;
+		this.timeout = timeout;
+		this.userAgent = userAgent;
+		this.referer = referer;
+	}
 
-    public Result getURL(String currentUrl, String initialUrl, String chromeDriver) {
+	public Result getURL(String currentUrl, String initialUrl, String chromeDriver) {
 
-        Result result = new Result();
-        HttpURLConnection httpURLConnection = null;
+		Result result = new Result();
+		HttpURLConnection httpURLConnection = null;
 
-        try {
+		try {
 
-            URL url = this.createUrl(currentUrl);
+			URL url = this.createUrl(currentUrl);
 
-            if (proxy == null) {
-                httpURLConnection = (HttpURLConnection) url.openConnection();
-            } else {
-                httpURLConnection = (HttpURLConnection) url.openConnection(proxy);
-            }
+			if (proxy == null) {
+				httpURLConnection = (HttpURLConnection) url.openConnection();
+			} else {
+				httpURLConnection = (HttpURLConnection) url.openConnection(proxy);
+			}
 
-            httpURLConnection.setConnectTimeout(timeout.intValue());
-            httpURLConnection.setReadTimeout(timeout.intValue());
-            httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
-            httpURLConnection.addRequestProperty("User-Agent", userAgent);
-            httpURLConnection.addRequestProperty("Referer", referer);
+			httpURLConnection.setConnectTimeout(timeout.intValue());
+			httpURLConnection.setReadTimeout(timeout.intValue());
+			httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
+			httpURLConnection.addRequestProperty("User-Agent", userAgent);
+			httpURLConnection.addRequestProperty("Referer", referer);
 
-            httpURLConnection.connect();
+			httpURLConnection.connect();
 
-            int code = httpURLConnection.getResponseCode();
-            String message = httpURLConnection.getResponseMessage();
+			int code = httpURLConnection.getResponseCode();
+			String message = httpURLConnection.getResponseMessage();
 
-            result.setCode(code);
-            result.setMessage(message);
-            result.setUrl(currentUrl);
-            result.setRootUrl(initialUrl);
+			result.setCode(code);
+			result.setMessage(message);
+			result.setUrl(currentUrl);
+			result.setRootUrl(initialUrl);
 
-            if (code == HttpURLConnection.HTTP_OK) {
-                /*
-                 * If pdf, do not use the webdriver, which was only used
-                 * intitially to handle js
-                 */
-                if (httpURLConnection.getContentType().equals("application/pdf") || currentUrl.substring(currentUrl.length() - 3).toLowerCase().equals("pdf")) {
-                    LOGGER.debug("Found pdf, downloading {}", currentUrl);
-                    result.setContent(IOUtils.toByteArray(httpURLConnection.getInputStream()));
-                } else {
+			if (code == HttpURLConnection.HTTP_OK) {
+				/*
+				 * If pdf, do not use the webdriver, which was only used intitially to handle js
+				 */
+				if (httpURLConnection.getContentType().equals("application/pdf") || currentUrl.substring(currentUrl.length() - 3).equalsIgnoreCase("pdf")) {
 
-                    closeConnection(httpURLConnection);
-                    result.setHeaders(httpURLConnection.getHeaderFields());
-                    webDriverController.getURL(result, chromeDriver);
+					LOGGER.debug("Found pdf, downloading {}", currentUrl);
+					result.setContent(IOUtils.toByteArray(httpURLConnection.getInputStream()));
+				} else {
 
-                }
+					closeConnection(httpURLConnection);
+					result.setHeaders(httpURLConnection.getHeaderFields());
+					webDriverController.getURL(result, chromeDriver);
 
-            } else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == HttpURLConnection.HTTP_SEE_OTHER) {
+				}
 
-                String newUrl = httpURLConnection.getHeaderField("Location");
-                closeConnection(httpURLConnection);
+			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == HttpURLConnection.HTTP_SEE_OTHER) {
 
-                LOGGER.debug("Redirect needed to :  {}", newUrl);
-                return getURL(newUrl, initialUrl, chromeDriver);
+				String newUrl = httpURLConnection.getHeaderField("Location");
+				closeConnection(httpURLConnection);
 
-            } else {
-                LOGGER.warn("Failed To Read status {}, url {}, message {}", code, url, message);
-            }
+				LOGGER.debug("Redirect needed to :  {}", newUrl);
+				return getURL(newUrl, initialUrl, chromeDriver);
 
-        } catch (SocketTimeoutException e) {
+			} else {
+				LOGGER.warn("Failed To Read status {}, url {}, message {}", code, url, message);
+			}
 
-            LOGGER.warn("Thread url {}, sleeping and trying again", currentUrl);
-            closeConnection(httpURLConnection);
-            return result;
+		} catch (SocketTimeoutException e) {
 
-        } catch (SSLException e) {
+			LOGGER.warn("Thread url {}, sleeping and trying again", currentUrl);
+			closeConnection(httpURLConnection);
+			return result;
 
-            LOGGER.warn("Thread url {}, SSLException error, sleeping and trying again", currentUrl, e);
-            closeConnection(httpURLConnection);
-            return result;
+		} catch (SSLException e) {
 
-        } catch (MalformedURLException mue) {
-            LOGGER.error("Malformed url : {}", currentUrl, mue);
-            closeConnection(httpURLConnection);
-            return result;
+			LOGGER.warn("Thread url {}, SSLException error, sleeping and trying again", currentUrl, e);
+			closeConnection(httpURLConnection);
+			return result;
 
-        } catch (Exception e) {
-            LOGGER.error("Failed to retrieve URL url {}", currentUrl, e);
-        } finally {
-            closeConnection(httpURLConnection);
-        }
+		} catch (MalformedURLException mue) {
+			LOGGER.error("Malformed url : {}", currentUrl, mue);
+			closeConnection(httpURLConnection);
+			return result;
 
-        return result;
-    }
+		} catch (Exception e) {
+			LOGGER.error("Failed to retrieve URL url {}", currentUrl, e);
+		} finally {
+			closeConnection(httpURLConnection);
+		}
 
-    private void closeConnection(HttpURLConnection httpURLConnection) {
+		return result;
+	}
 
-        if (httpURLConnection != null) {
-            httpURLConnection.disconnect();
-        }
-    }
+	private void closeConnection(HttpURLConnection httpURLConnection) {
 
-    private byte[] getInputStream(HttpURLConnection httpURLConnection) throws IOException {
+		if (httpURLConnection != null) {
+			httpURLConnection.disconnect();
+		}
+	}
 
-        try (InputStream inputStream = httpURLConnection.getInputStream()) {
-            return IOUtils.toByteArray(inputStream);
-        } catch (IOException e) {
-            LOGGER.error("Failed to retrive url {}", httpURLConnection.getURL().toString(), e);
-        }
+	private byte[] getInputStream(HttpURLConnection httpURLConnection) throws IOException {
 
-        return new byte[0];
-    }
+		try (InputStream inputStream = httpURLConnection.getInputStream()) {
+			return IOUtils.toByteArray(inputStream);
+		} catch (IOException e) {
+			LOGGER.error("Failed to retrive url {}", httpURLConnection.getURL().toString(), e);
+		}
 
-    public URL createUrl(String currentUrl) throws MalformedURLException {
+		return new byte[0];
+	}
 
-        return new URL(currentUrl);
-    }
+	public URL createUrl(String currentUrl) throws MalformedURLException {
 
-    public void setTimeout(Long timeOut) {
+		return new URL(currentUrl);
+	}
 
-        this.timeout = timeOut;
-    }
+	public void setTimeout(Long timeOut) {
+
+		this.timeout = timeOut;
+	}
 
 }
