@@ -3,6 +3,7 @@ package eu.wajja.web.fetcher.controller;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.Proxy;
 import java.net.SocketTimeoutException;
 import java.net.URL;
@@ -35,12 +36,12 @@ public class URLController {
 
 	public Result getURL(String currentUrl, String initialUrl, String chromeDriver) {
 
-		HttpURLConnection httpURLConnection = null;
 		Result result = new Result();
+		HttpURLConnection httpURLConnection = null;
 
 		try {
 
-			URL url = new URL(currentUrl);
+			URL url = this.createUrl(currentUrl);
 
 			if (proxy == null) {
 				httpURLConnection = (HttpURLConnection) url.openConnection();
@@ -58,17 +59,27 @@ public class URLController {
 
 			int code = httpURLConnection.getResponseCode();
 			String message = httpURLConnection.getResponseMessage();
+
 			result.setCode(code);
 			result.setMessage(message);
 			result.setUrl(currentUrl);
 			result.setRootUrl(initialUrl);
 
 			if (code == HttpURLConnection.HTTP_OK) {
+				/*
+				 * If pdf, do not use the webdriver, which was only used intitially to handle js
+				 */
+				if (httpURLConnection.getContentType().equals("application/pdf") || currentUrl.substring(currentUrl.length() - 3).equalsIgnoreCase("pdf")) {
 
-				closeConnection(httpURLConnection);
-				result.setHeaders(httpURLConnection.getHeaderFields());
+					LOGGER.debug("Found pdf, downloading {}", currentUrl);
+					result.setContent(IOUtils.toByteArray(httpURLConnection.getInputStream()));
+				} else {
 
-				webDriverController.getURL(result, chromeDriver);
+					closeConnection(httpURLConnection);
+					result.setHeaders(httpURLConnection.getHeaderFields());
+					webDriverController.getURL(result, chromeDriver);
+
+				}
 
 			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == HttpURLConnection.HTTP_SEE_OTHER) {
 
@@ -91,6 +102,11 @@ public class URLController {
 		} catch (SSLException e) {
 
 			LOGGER.warn("Thread url {}, SSLException error, sleeping and trying again", currentUrl, e);
+			closeConnection(httpURLConnection);
+			return result;
+
+		} catch (MalformedURLException mue) {
+			LOGGER.error("Malformed url : {}", currentUrl, mue);
 			closeConnection(httpURLConnection);
 			return result;
 
@@ -119,6 +135,16 @@ public class URLController {
 		}
 
 		return new byte[0];
+	}
+
+	public URL createUrl(String currentUrl) throws MalformedURLException {
+
+		return new URL(currentUrl);
+	}
+
+	public void setTimeout(Long timeOut) {
+
+		this.timeout = timeOut;
 	}
 
 }
