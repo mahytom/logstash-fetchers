@@ -69,7 +69,8 @@ public class URLController {
 				/*
 				 * If pdf, do not use the webdriver, which was only used intitially to handle js
 				 */
-				if (httpURLConnection.getContentType().equals("application/pdf") || currentUrl.substring(currentUrl.length() - 3).toLowerCase().equals("pdf")) {
+				if (httpURLConnection.getContentType().equals("application/pdf") || currentUrl.substring(currentUrl.length() - 3).equalsIgnoreCase("pdf")) {
+
 					LOGGER.debug("Found pdf, downloading {}", currentUrl);
 					result.setContent(IOUtils.toByteArray(httpURLConnection.getInputStream()));
 				} else {
