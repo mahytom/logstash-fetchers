@@ -26,4 +26,4 @@ gradle.properties
 .settings
 *.zip
 *.class
-test.properties
+log4j2-test-properties
