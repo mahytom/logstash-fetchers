@@ -1,23 +1,18 @@
 package eu.wajja.web.controller;
 
 import java.io.IOException;
-import java.net.URL;
-import java.util.Arrays;
-import java.util.Map;
-import java.util.function.Consumer;
 import java.net.HttpURLConnection;
+import java.net.URL;
 
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
-import org.mockito.Spy;
 import org.mockito.Mockito;
+import org.mockito.Spy;
 import org.mockito.runners.MockitoJUnitRunner;
 
-import eu.wajja.web.fetcher.controller.URLController;
-import eu.wajja.web.fetcher.controller.WebDriverController;;
+import eu.wajja.web.fetcher.controller.URLController;;
 
 @RunWith(MockitoJUnitRunner.class)
 public class UrlControllerTest {
