@@ -33,7 +33,7 @@ public class UrlControllerTest {
     private URL url;
 
 	@Test
-	public void pdfExtensionTesting() throws IOException {
+	public void pdfExtensionSuffixTesting() throws IOException {
 
         String chromeDriver = "http://localhost:3000";
 		String currentUrl = "https://ec.europa.eu/belgium/sites/belgium/files/og_image/poster_drapeau_europeen.pdf";
@@ -43,6 +43,25 @@ public class UrlControllerTest {
         Mockito.when(url.openConnection()).thenReturn(httpURLConnection);
         Mockito.doReturn(url).when(urlController).createUrl(Mockito.anyString());
         Mockito.when(httpURLConnection.getResponseCode()).thenReturn(HttpURLConnection.HTTP_OK);
+        Mockito.when(httpURLConnection.getContentType()).thenReturn("html");
+
+        urlController.getURL(currentUrl,initialUrl,chromeDriver);
+
+		Mockito.verify(httpURLConnection).getInputStream();
+
+	}
+	@Test
+	public void pdfExtensionContentTypeTesting() throws IOException {
+
+        String chromeDriver = "http://localhost:3000";
+		String currentUrl = "https://ec.europa.eu/belgium/sites/belgium/files/og_image/poster_drapeau_europeen.html";
+        String initialUrl = "https://ec.europa.eu/belgium/";
+
+        urlController.setTimeout(5L);
+        Mockito.when(url.openConnection()).thenReturn(httpURLConnection);
+        Mockito.doReturn(url).when(urlController).createUrl(Mockito.anyString());
+        Mockito.when(httpURLConnection.getResponseCode()).thenReturn(HttpURLConnection.HTTP_OK);
+        Mockito.when(httpURLConnection.getContentType()).thenReturn("application/pdf");
 
         urlController.getURL(currentUrl,initialUrl,chromeDriver);
 
@@ -61,6 +80,7 @@ public class UrlControllerTest {
         Mockito.when(url.openConnection()).thenReturn(httpURLConnection);
         Mockito.doReturn(url).when(urlController).createUrl(Mockito.anyString());
         Mockito.when(httpURLConnection.getResponseCode()).thenReturn(HttpURLConnection.HTTP_OK);
+        Mockito.when(httpURLConnection.getContentType()).thenReturn("html");
 
         urlController.getURL(currentUrl,initialUrl,chromeDriver);
 

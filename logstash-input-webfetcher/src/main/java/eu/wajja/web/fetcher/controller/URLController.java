@@ -59,6 +59,7 @@ public class URLController {
 
             int code = httpURLConnection.getResponseCode();
             String message = httpURLConnection.getResponseMessage();
+
             result.setCode(code);
             result.setMessage(message);
             result.setUrl(currentUrl);
@@ -69,7 +70,7 @@ public class URLController {
                  * If pdf, do not use the webdriver, which was only used
                  * intitially to handle js
                  */
-                if (currentUrl.endsWith("pdf")) {
+                if (httpURLConnection.getContentType().equals("application/pdf") || currentUrl.substring(currentUrl.length() - 3).toLowerCase().equals("pdf")) {
                     LOGGER.debug("Found pdf, downloading {}", currentUrl);
                     result.setContent(IOUtils.toByteArray(httpURLConnection.getInputStream()));
                 } else {
@@ -136,9 +137,9 @@ public class URLController {
         return new byte[0];
     }
 
-    public URL createUrl(String currentUrl) throws MalformedURLException{
+    public URL createUrl(String currentUrl) throws MalformedURLException {
 
-            return new URL(currentUrl);
+        return new URL(currentUrl);
     }
 
     public void setTimeout(Long timeOut) {
