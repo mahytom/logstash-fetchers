@@ -73,6 +73,7 @@ public class URLController {
 
 					LOGGER.debug("Found pdf, downloading {}", currentUrl);
 					result.setContent(IOUtils.toByteArray(httpURLConnection.getInputStream()));
+
 				} else {
 
 					closeConnection(httpURLConnection);
@@ -138,10 +139,10 @@ public class URLController {
 	}
 
 
-    public URL createUrl(String currentUrl) throws MalformedURLException {
+	public URL createUrl(String currentUrl) throws MalformedURLException {
 
-        return new URL(currentUrl);
-    }
+		return new URL(currentUrl);
+	}
 
     public void setTimeout(Long timeOut) {
 
