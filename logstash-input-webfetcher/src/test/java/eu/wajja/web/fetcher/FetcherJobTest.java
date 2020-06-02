@@ -88,4 +88,5 @@ public class FetcherJobTest {
 		Mockito.verify(consumer, Mockito.never()).accept(Mockito.anyMap());
 
 	}
+
 }
