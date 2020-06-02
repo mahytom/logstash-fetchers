@@ -135,7 +135,6 @@ public class WebFetcherRobotTest {
 		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl), Mockito.anyString())).thenReturn(result1);
 		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl), Mockito.anyString())).thenReturn(result1);
 		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl), Mockito.anyString())).thenReturn(result1);
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/sites/1"), Mockito.eq(rootUrl), Mockito.anyString())).thenReturn(result1);
 
 		fetcherJob.execute(jobExecutionContext);
 

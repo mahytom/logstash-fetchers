@@ -26,5 +26,4 @@ gradle.properties
 .settings
 *.zip
 *.class
-test.properties
 *IntegrationTest.java
