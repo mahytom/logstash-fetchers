@@ -9,6 +9,7 @@ import java.nio.file.Paths;
 import java.rmi.RemoteException;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -44,7 +45,6 @@ import com.atlassian.confluence.api.model.pagination.SimplePageRequest;
 import com.atlassian.confluence.api.model.people.Person;
 import com.atlassian.confluence.api.model.people.Subject;
 import com.atlassian.confluence.api.model.people.SubjectType;
-import com.atlassian.confluence.api.model.permissions.ContentRestriction;
 import com.atlassian.confluence.api.model.permissions.ContentRestrictionsPageResponse;
 import com.atlassian.confluence.api.model.permissions.OperationKey;
 import com.atlassian.confluence.rest.client.RemoteAttachmentServiceImpl;
@@ -276,6 +276,23 @@ public class ConfluenceDataFetcher implements Job {
 		ContentType contentType = ContentType.PAGE;
 		PageRequest pageRequest = new SimplePageRequest(size, batchSize.intValue());
 
+//		928738786
+
+//		Content content = remoteContentServiceImpl
+//				.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
+//				.withStatus(contentStatus)
+//				.withId(ContentId.of(928738786l)).fetchOrNull().claim();
+//
+//		Permissions permissions = addAllRestrictions(content, command, spacePermissions);
+//
+//		permissions.getUsers().stream().forEach(x -> {
+//			LOGGER.info("User : " + x);
+//		});
+//
+//		permissions.getGroups().stream().forEach(x -> {
+//			LOGGER.info("Group : " + x);
+//		});
+
 		try {
 
 			PageResponse<Content> pageResponse = remoteContentServiceImpl
@@ -374,16 +391,16 @@ public class ConfluenceDataFetcher implements Job {
 					}
 
 				}
-			}
 
-			size = size + batchSize.intValue();
-			pageRequest = new SimplePageRequest(size, batchSize.intValue());
-			pageResponse = remoteContentServiceImpl
-					.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
-					.withStatus(contentStatus)
-					.withSpace(space)
-					.fetchMany(contentType, pageRequest)
-					.claim();
+				size = size + batchSize.intValue();
+				pageRequest = new SimplePageRequest(size, batchSize.intValue());
+				pageResponse = remoteContentServiceImpl
+						.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
+						.withStatus(contentStatus)
+						.withSpace(space)
+						.fetchMany(contentType, pageRequest)
+						.claim();
+			}
 
 		} catch (Exception e) {
 			LOGGER.info("Failed to get {}", contentType.getValue(), e);
@@ -516,13 +533,22 @@ public class ConfluenceDataFetcher implements Job {
 
 			if (!command.equals(Command.DELETE)) {
 
-				getContentPermissions(content, permissions);
-				content.getAncestors().stream().forEach(ancestor -> getContentPermissions(ancestor, permissions));
+				permissions = getContentPermissions(content);
+				List<Content> ancestors = content.getAncestors();
+				Collections.reverse(ancestors);
+
+				for (Content parent : ancestors) {
+
+					Permissions permissionsParent = getContentPermissions(parent);
+
+					if (!permissionsParent.getGroups().isEmpty() || !permissionsParent.getUsers().isEmpty()) {
+						permissions = permissionsParent;
+					}
+				}
 
 				if (permissions.getGroups().isEmpty() && permissions.getUsers().isEmpty()) {
 					permissions.getGroups().addAll(spacePermissions);
 				}
-
 			}
 
 		} catch (Exception e) {
@@ -532,12 +558,12 @@ public class ConfluenceDataFetcher implements Job {
 		return permissions;
 	}
 
-	private void getContentPermissions(Content content, Permissions permissions) {
+	private Permissions getContentPermissions(Content content) {
+
+		Permissions permissions = new Permissions();
 
 		PageRequest pageRequest = new SimplePageRequest(0, 10);
 		ContentRestrictionsPageResponse contentRestrictionsPageResponse = remoteContentRestrictionServiceImpl.getRestrictions(content.getId(), pageRequest).claim();
-
-		List<ContentRestriction> pp = contentRestrictionsPageResponse.getResults();
 
 		contentRestrictionsPageResponse.getResults().stream().filter(x -> x.getOperation().getOperationKey().equals(OperationKey.READ)).forEach(perm -> {
 
@@ -555,6 +581,8 @@ public class ConfluenceDataFetcher implements Job {
 					.collect(Collectors.toList()));
 
 		});
+
+		return permissions;
 	}
 
 	private List<Space> getSpaces(List<String> sites) {

@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -66,6 +67,7 @@ public class WebFetcherLogicTest {
 		jobDataMap.put(WebFetcher.PROPERTY_PROXY_PORT, 80l);
 		jobDataMap.put(WebFetcher.PROPERTY_TIMEOUT, 300l);
 		jobDataMap.put(WebFetcher.PROPERTY_CONSUMER, consumer);
+		jobDataMap.put(WebFetcher.PROPERTY_DATAFOLDER, System.getProperty("java.io.tmpdir") + "/" + UUID.randomUUID().toString());
 
 		Mockito.when(jobDetail.getJobDataMap()).thenReturn(jobDataMap);
 

@@ -65,6 +65,7 @@ public class FetcherJobTest {
 		jobDataMap.put(WebFetcher.PROPERTY_PROXY_PORT, 80l);
 		jobDataMap.put(WebFetcher.PROPERTY_TIMEOUT, 300l);
 		jobDataMap.put(WebFetcher.PROPERTY_CONSUMER, consumer);
+		jobDataMap.put(WebFetcher.PROPERTY_DATAFOLDER, System.getProperty("java.io.tmpdir"));
 
 		Mockito.when(jobDetail.getJobDataMap()).thenReturn(jobDataMap);
 

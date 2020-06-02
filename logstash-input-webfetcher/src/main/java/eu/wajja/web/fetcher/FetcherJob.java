@@ -10,7 +10,6 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -77,6 +76,7 @@ public class FetcherJob implements Job {
 	private static final String HTTP = "http://";
 	private static final String HTTPS = "https://";
 	private static final String ROBOTS = "robots.txt";
+	private static final String FETCHED_DATA_FOLDER = "/fetched-data/";
 
 	private ObjectMapper objectMapper = new ObjectMapper();
 	private Random random = new Random();
@@ -90,9 +90,12 @@ public class FetcherJob implements Job {
 	private String threadId;
 	private String fireId;
 	private String crawlerUserAgent;
+	private String dataFolder;
 
 	private Set<String> processedSet = new HashSet<>();
 	private Set<String> processingSet = new HashSet<>();
+	private Map<String, String> historicMap = new HashMap<>();
+	private Map<String, String> currentMap = new HashMap<>();
 
 	protected Map<String, Set<String>> disallowedLocations = new HashMap<>();
 	protected Map<String, Set<String>> allowedLocations = new HashMap<>();
@@ -110,7 +113,7 @@ public class FetcherJob implements Job {
 		List<String> initialUrls = (List<String>) dataMap.get(WebFetcher.PROPERTY_URLS);
 		List<String> chromeThreads = (List<String>) dataMap.get(WebFetcher.PROPERTY_CHROME_DRIVERS);
 
-		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
+		dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
 		boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
 
 		this.fireId = context.getFireInstanceId();
@@ -155,7 +158,7 @@ public class FetcherJob implements Job {
 			LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
 
 			String id = Base64.getEncoder().encodeToString(initialUrl.getBytes());
-			Map<String, String> legacyUrlMap = getLegacyUrlMap(dataFolder, id);
+			historicMap = getHistoryFile(id, Command.ADD);
 
 			// Read the robot.txt first
 
@@ -188,7 +191,7 @@ public class FetcherJob implements Job {
 					Long currentDepth = depth;
 
 					LOGGER.debug("Adding url {} to thread {}", url, randomValue);
-					threadPoolExecutors[randomValue].execute(() -> extractUrl(consumer, url, initialUrl, currentDepth, chromeThreads.get(randomValue), legacyUrlMap));
+					threadPoolExecutors[randomValue].execute(() -> extractUrl(consumer, url, initialUrl, currentDepth, chromeThreads.get(randomValue)));
 
 				}
 
@@ -209,10 +212,11 @@ public class FetcherJob implements Job {
 				depth++;
 			}
 
-			saveLegacyUrlMap(dataFolder, id, legacyUrlMap);
-
 			// Compare to previously extracted content and delete delta
-			deleteOldDocuments(consumer, dataFolder, id);
+			deleteOldDocuments(consumer, id);
+
+			// Saving new Map
+			saveHistoryFile(id, currentMap, Command.ADD);
 
 		});
 
@@ -220,48 +224,49 @@ public class FetcherJob implements Job {
 
 	}
 
-	private void saveLegacyUrlMap(String dataFolder, String id, Map<String, String> legacyUrlMap) {
+	private void saveHistoryFile(String id, Map<String, String> historyMap, Command command) {
 
-		if (dataFolder == null) {
-			return;
-		}
-
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_legacy.txt").toString());
+		Path pathFile = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).append(id).append("_").append(command.name()).append(".json").toString());
 
 		try {
-			String json = objectMapper.writeValueAsString(legacyUrlMap);
+			String json = objectMapper.writeValueAsString(historyMap);
 			Files.write(pathFile, json.getBytes());
 		} catch (IOException e) {
 			LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);
 		}
+
 	}
 
-	private Map<String, String> getLegacyUrlMap(String dataFolder, String id) {
+	@SuppressWarnings("unchecked")
+	private Map<String, String> getHistoryFile(String id, Command command) {
 
-		if (dataFolder == null) {
-			return new HashMap<>();
-		}
+		Path pathFolder = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).toString());
 
-		Map<String, String> legacyUrlMap = new HashMap<>();
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_legacy.txt").toString());
-
-		if (pathFile.toFile().exists()) {
+		if (!pathFolder.toFile().exists()) {
 
 			try {
-				legacyUrlMap = (Map<String, String>) objectMapper.readValue(pathFile.toFile(), Map.class);
+				Files.createDirectory(pathFolder);
 			} catch (IOException e) {
-
-				LOGGER.info("Failed to read legacy file, deleting it", e);
-
-				boolean deleted = pathFile.toFile().delete();
-				LOGGER.info("Deleted old fetcher data : {}", deleted, e);
-
-				legacyUrlMap = new HashMap<>();
-
+				LOGGER.info("Failed to create data folder : {}", pathFolder, e);
 			}
 		}
 
-		return legacyUrlMap;
+		Path pathFile = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).append(id).append("_").append(command.name()).append(".json").toString());
+
+		if (pathFile.toFile().exists()) {
+
+			LOGGER.info("Reading file {}", pathFile);
+
+			try {
+				return objectMapper.readValue(pathFile.toFile(), Map.class);
+			} catch (IOException e) {
+				LOGGER.info("Failed to read history file : {}", pathFile, e);
+			}
+		} else {
+			LOGGER.info("Could not read file {}", pathFile);
+		}
+
+		return new HashMap<>();
 	}
 
 	private void readRobot(String initialUrl, String robotUrl, String chromeDriver) {
@@ -325,7 +330,7 @@ public class FetcherJob implements Job {
 		}
 	}
 
-	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth, String chromeDriver, Map<String, String> legacyUrlMap) {
+	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth, String chromeDriver) {
 
 		String urlString = null;
 
@@ -370,7 +375,7 @@ public class FetcherJob implements Job {
 			Result result = urlController.getURL(urlString, rootUrl, chromeDriver);
 
 			if (result != null && result.getContent() != null) {
-				extractContent(consumer, result, uuid, depth, legacyUrlMap);
+				extractContent(consumer, result, uuid, depth);
 			}
 
 		} catch (Exception e) {
@@ -379,7 +384,7 @@ public class FetcherJob implements Job {
 
 	}
 
-	private List<String> extractContent(Consumer<Map<String, Object>> consumer, Result result, String uuid, Long depth, Map<String, String> legacyUrlMap) throws IOException {
+	private List<String> extractContent(Consumer<Map<String, Object>> consumer, Result result, String uuid, Long depth) throws IOException {
 
 		byte[] bytes = result.getContent();
 		Map<String, List<String>> headers = result.getHeaders();
@@ -414,12 +419,12 @@ public class FetcherJob implements Job {
 
 			String hex = DigestUtils.md5Hex(result.getContent());
 
-			if (legacyUrlMap.containsKey(result.getUrl()) && legacyUrlMap.get(result.getUrl()).equals(hex)) {
+			if (historicMap.containsKey(result.getUrl()) && historicMap.get(result.getUrl()).equals(hex)) {
 				loggerMap.put(LOGGER_ACTION, "exclude_data");
 			} else {
 				consumer.accept(metadata);
 				loggerMap.put(LOGGER_ACTION, "include_data");
-				legacyUrlMap.put(result.getUrl(), hex);
+				currentMap.put(result.getUrl(), hex);
 			}
 
 		} else {
@@ -538,54 +543,25 @@ public class FetcherJob implements Job {
 		return urlString;
 	}
 
-	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String dataFolder, String id) {
+	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String id) {
 
-		if (dataFolder == null) {
-			return;
-		}
+		Map<String, String> historyMap = getHistoryFile(id, Command.ADD);
+		List<String> keysToDelete = historyMap.keySet().stream().filter(x -> !currentMap.containsKey(x)).collect(Collectors.toList());
 
-		Path indexPath = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).toString());
+		LOGGER.info("Thread deleting {}, deleting {} urls", threadId, keysToDelete.size());
 
-		if (!indexPath.toFile().exists()) {
-			indexPath.toFile().mkdirs();
-		}
+		keysToDelete.stream().forEach(url -> {
 
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_tmp.txt").toString());
+			String reference = Base64.getEncoder().encodeToString(url.getBytes());
+			LOGGER.info("Thread Sending Deletion {}, reference {}", threadId, reference);
 
-		if (pathFile.toFile().exists()) {
+			Map<String, Object> metadata = new HashMap<>();
+			metadata.put(METADATA_REFERENCE, reference);
+			metadata.put(METADATA_COMMAND, Command.DELETE.toString());
 
-			try {
-				List<String> legacyFile = Arrays.asList(objectMapper.readValue(pathFile.toFile(), String[].class));
-				List<String> urlsForDeletion = legacyFile.stream().filter(l -> !processedSet.contains(l)).collect(Collectors.toList());
+			consumer.accept(metadata);
 
-				LOGGER.info("Thread deleting {}, deleting {} urls", threadId, urlsForDeletion.size());
-
-				urlsForDeletion.stream().forEach(url -> {
-
-					String reference = Base64.getEncoder().encodeToString(url.getBytes());
-					LOGGER.info("Thread Sending Deletion {}, reference {}", threadId, reference);
-
-					Map<String, Object> metadata = new HashMap<>();
-					metadata.put(METADATA_REFERENCE, reference);
-					metadata.put(METADATA_COMMAND, Command.DELETE.toString());
-
-					consumer.accept(metadata);
-
-				});
-
-				Files.delete(pathFile);
-
-			} catch (IOException e) {
-				LOGGER.warn("Failed to read legacy file", e);
-			}
-		}
-
-		try {
-			String json = objectMapper.writeValueAsString(processedSet);
-			Files.write(pathFile, json.getBytes());
-		} catch (IOException e) {
-			LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);
-		}
+		});
 
 	}
 }
