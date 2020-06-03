@@ -37,7 +37,7 @@ public class URLController {
 	public Result getURL(String currentUrl, String initialUrl, String chromeDriver) {
 
 		Result result = new Result();
-        HttpURLConnection httpURLConnection = null;
+		HttpURLConnection httpURLConnection = null;
 
 		try {
 
@@ -50,7 +50,7 @@ public class URLController {
 			}
 
 			httpURLConnection.setConnectTimeout(timeout.intValue());
-            httpURLConnection.setReadTimeout(timeout.intValue());
+			httpURLConnection.setReadTimeout(timeout.intValue());
 			httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
 			httpURLConnection.addRequestProperty("User-Agent", userAgent);
 			httpURLConnection.addRequestProperty("Referer", referer);
@@ -138,15 +138,14 @@ public class URLController {
 		return new byte[0];
 	}
 
-
 	public URL createUrl(String currentUrl) throws MalformedURLException {
 
 		return new URL(currentUrl);
 	}
 
-    public void setTimeout(Long timeOut) {
+	public void setTimeout(Long timeOut) {
 
-        this.timeout = timeOut;
-    }
+		this.timeout = timeOut;
+	}
 
 }
