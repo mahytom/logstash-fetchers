@@ -65,6 +65,7 @@ dependencies {
    	
     compile fileTree(dir: LOGSTASH_CORE_PATH, include: "**/logstash-core-?.?.?.jar")
 
+	testCompile group: 'org.mockito', name: 'mockito-all', version: '1.10.19'
     testCompile 'junit:junit:4.12'
     testCompile 'org.jruby:jruby-complete:9.1.13.0'
     testImplementation 'org.mockito:mockito-inline:2.13.0'
