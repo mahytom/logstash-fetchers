@@ -37,7 +37,7 @@ public class URLController {
 	public Result getURL(String currentUrl, String initialUrl, String chromeDriver) {
 
 		Result result = new Result();
-        HttpURLConnection httpURLConnection = null;
+		HttpURLConnection httpURLConnection = null;
 
 		try {
 
@@ -50,7 +50,7 @@ public class URLController {
 			}
 
 			httpURLConnection.setConnectTimeout(timeout.intValue());
-            httpURLConnection.setReadTimeout(timeout.intValue());
+			httpURLConnection.setReadTimeout(timeout.intValue());
 			httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
 			httpURLConnection.addRequestProperty("User-Agent", userAgent);
 			httpURLConnection.addRequestProperty("Referer", referer);
@@ -65,21 +65,6 @@ public class URLController {
 			result.setUrl(currentUrl);
 			result.setRootUrl(initialUrl);
 
-<<<<<<< HEAD
-            if (code == HttpURLConnection.HTTP_OK) {
-                /*If pdf, do not use the webdriver, which was only used intitially to handle js*/
-                if (currentUrl.endsWith("pdf")) {
-                    LOGGER.debug("Found pdf, downloading {}",currentUrl);
-                    result.setContent(IOUtils.toByteArray(httpURLConnection.getInputStream()));
-                }
-                else {
-
-                    closeConnection(httpURLConnection);
-                    result.setHeaders(httpURLConnection.getHeaderFields());
-                    webDriverController.getURL(result, chromeDriver);
-
-                }
-=======
 			if (code == HttpURLConnection.HTTP_OK) {
 				/*
 				 * If pdf, do not use the webdriver, which was only used intitially to handle js
@@ -88,6 +73,7 @@ public class URLController {
 
 					LOGGER.debug("Found pdf, downloading {}", currentUrl);
 					result.setContent(IOUtils.toByteArray(httpURLConnection.getInputStream()));
+
 				} else {
 
 					closeConnection(httpURLConnection);
@@ -95,7 +81,6 @@ public class URLController {
 					webDriverController.getURL(result, chromeDriver);
 
 				}
->>>>>>> 2c305c6c5cc8f05d79f946876426956e1a78dc83
 
 			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == HttpURLConnection.HTTP_SEE_OTHER) {
 
@@ -152,7 +137,6 @@ public class URLController {
 
 		return new byte[0];
 	}
-
 
 	public URL createUrl(String currentUrl) throws MalformedURLException {
 

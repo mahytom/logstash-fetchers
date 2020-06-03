@@ -15,7 +15,7 @@ import org.junit.runner.RunWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnitRunner;
 import org.quartz.JobDataMap;
 import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
@@ -135,7 +135,6 @@ public class WebFetcherRobotTest {
 		Mockito.when(urlController.getURL(Mockito.eq(rootUrl), Mockito.eq(rootUrl), Mockito.anyString())).thenReturn(result1);
 		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page1"), Mockito.eq(rootUrl), Mockito.anyString())).thenReturn(result1);
 		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/page2"), Mockito.eq(rootUrl), Mockito.anyString())).thenReturn(result1);
-		Mockito.when(urlController.getURL(Mockito.eq(rootUrl + "/sites/1"), Mockito.eq(rootUrl), Mockito.anyString())).thenReturn(result1);
 
 		fetcherJob.execute(jobExecutionContext);
 
