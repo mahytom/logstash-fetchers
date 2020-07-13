@@ -26,6 +26,9 @@ public class SchedulerBuilder {
 	static {
 
 		try {
+			
+			LOGGER.info("Initializing scheduler");
+			
 			DirectSchedulerFactory factory = DirectSchedulerFactory.getInstance();
 
 			Integer quartzThreads = Integer.valueOf(System.getProperty("quartzThreads", "100"));		

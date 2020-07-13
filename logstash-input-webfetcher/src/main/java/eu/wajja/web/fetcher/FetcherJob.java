@@ -161,6 +161,8 @@ public class FetcherJob implements Job {
 
 			if (readRobot) {
 
+				LOGGER.info("Reading Robot : {}, url : {}", threadId, initialUrl);
+
 				Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
 				Matcher m = p.matcher(initialUrl);
 
@@ -172,13 +174,22 @@ public class FetcherJob implements Job {
 					LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
 				}
 
+				LOGGER.info("Finished Reading Robot : {}, url : {}", threadId, initialUrl);
+
 			}
 
 			// Extract the site content
 			processingSet.add(initialUrl);
 			Long depth = 0l;
 
-			while (processedSet.size() != processingSet.size() && (processedSet.size() < maxPages && maxPages > 0)) {
+			LOGGER.info("Starting to read urls : {}, url : {}, maxpages : {}, processedSet : {}", threadId, processingSet, maxPages, processedSet);
+
+			while (processedSet.size() != processingSet.size()) {
+
+				if (processedSet.size() >= maxPages && maxPages > 0) {
+					LOGGER.info("Max number of documents reached : {} for url {}", processingSet.size(), initialUrl);
+					break;
+				}
 
 				List<String> urls = processingSet.stream().filter(u -> !processedSet.contains(u)).collect(Collectors.toList());
 
@@ -187,7 +198,7 @@ public class FetcherJob implements Job {
 					Integer randomValue = random.nextInt(chromeThreads.size());
 					Long currentDepth = depth;
 
-					LOGGER.debug("Adding url {} to thread {}", url, randomValue);
+					LOGGER.info("Adding url {} to thread {}", url, randomValue);
 					threadPoolExecutors[randomValue].execute(() -> extractUrl(consumer, url, initialUrl, currentDepth, chromeThreads.get(randomValue), legacyUrlMap));
 
 				}
@@ -229,6 +240,16 @@ public class FetcherJob implements Job {
 		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_legacy.txt").toString());
 
 		try {
+
+			if (!pathFile.toFile().exists()) {
+
+				boolean created = pathFile.toFile().createNewFile();
+
+				if (!created) {
+					LOGGER.info("Could not create file : {}", pathFile);
+				}
+			}
+
 			String json = objectMapper.writeValueAsString(legacyUrlMap);
 			Files.write(pathFile, json.getBytes());
 		} catch (IOException e) {
@@ -342,8 +363,6 @@ public class FetcherJob implements Job {
 				return;
 			} else {
 
-				processedSet.add(urlString);
-
 				Set<String> disallowedList = new HashSet<>();
 
 				if (disallowedLocations.containsKey("*")) {
@@ -361,6 +380,7 @@ public class FetcherJob implements Job {
 					Matcher m = p.matcher(urlString);
 
 					if (m.find()) {
+						LOGGER.info("URL {} is dissallowed", urlStringTmp);
 						return;
 					}
 				}
@@ -371,6 +391,9 @@ public class FetcherJob implements Job {
 
 			if (result != null && result.getContent() != null) {
 				extractContent(consumer, result, uuid, depth, legacyUrlMap);
+				processedSet.add(urlString);
+			} else {
+				LOGGER.info("URL {} is does not have content", urlStringTmp);
 			}
 
 		} catch (Exception e) {
@@ -470,6 +493,8 @@ public class FetcherJob implements Job {
 					.sorted()
 					.collect(Collectors.toList());
 
+			LOGGER.info("Child URLs after filtering from URL {} : {}", result.getUrl(), childPages);
+
 			metadata.put(METADATA_CHILD, new ArrayList<>(new HashSet<>(childPages)));
 
 		}
@@ -523,17 +548,17 @@ public class FetcherJob implements Job {
 				urlString = rootUrl + urlString;
 			}
 
-			if (urlString.endsWith("/") && !urlString.equals(rootUrl)) {
-				urlString = urlString.substring(0, urlString.lastIndexOf('/'));
-			}
+//			if (urlString.endsWith("/") && !urlString.equals(rootUrl)) {
+//				urlString = urlString.substring(0, urlString.lastIndexOf('/'));
+//			}
 
 		} catch (MalformedURLException e) {
 			LOGGER.error("Failed to parse url {}", urlString, e);
 		}
 
-		if (urlString.endsWith("/")) {
-			urlString = urlString.substring(0, urlString.length() - 1);
-		}
+//		if (urlString.endsWith("/")) {
+//			urlString = urlString.substring(0, urlString.length() - 1);
+//		}
 
 		return urlString;
 	}

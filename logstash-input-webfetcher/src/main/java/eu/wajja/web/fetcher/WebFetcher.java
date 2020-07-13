@@ -67,7 +67,7 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<String> CONFIG_DATA_FOLDER = PluginConfigSpec.stringSetting(PROPERTY_DATAFOLDER);
 	public static final PluginConfigSpec<Long> CONFIG_TIMEOUT = PluginConfigSpec.numSetting(PROPERTY_TIMEOUT, 8000);
 	public static final PluginConfigSpec<Long> CONFIG_MAX_DEPTH = PluginConfigSpec.numSetting(PROPERTY_MAX_DEPTH, 0);
-	public static final PluginConfigSpec<Long> CONFIG_MAX_PAGES = PluginConfigSpec.numSetting(PROPERTY_MAX_PAGES, 0);
+	public static final PluginConfigSpec<Long> CONFIG_MAX_PAGES = PluginConfigSpec.numSetting(PROPERTY_MAX_PAGES, 1000);
 	public static final PluginConfigSpec<Boolean> CONFIG_DISABLE_SSL_CHECK = PluginConfigSpec.booleanSetting(PROPERTY_SSL_CHECK, true);
 	public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting(PROPERTY_REFRESH_INTERVAL, 86400l);
 	public static final PluginConfigSpec<String> CONFIG_PROXY_HOST = PluginConfigSpec.stringSetting(PROPERTY_PROXY_HOST);
@@ -128,6 +128,8 @@ public class WebFetcher implements Input {
 	@Override
 	public void start(Consumer<Map<String, Object>> consumer) {
 
+		LOGGER.info("Starting a new Thread");
+		
 		try {
 
 			JobDataMap newJobDataMap = new JobDataMap(this.jobDataMap);
@@ -162,8 +164,10 @@ public class WebFetcher implements Input {
 	@Override
 	public void stop() {
 
+		LOGGER.info("Closing all scheduled jobs");
+		
 		try {
-			SchedulerBuilder.getScheduler().shutdown();
+			SchedulerBuilder.getScheduler().clear();
 		} catch (SchedulerException e) {
 			LOGGER.error("Failed to stop scheduler", e);
 		}
@@ -173,6 +177,9 @@ public class WebFetcher implements Input {
 
 	@Override
 	public void awaitStop() throws InterruptedException {
+		
+		LOGGER.info("Awaiting full stop");
+		
 		done.await();
 	}
 
