@@ -11,7 +11,7 @@ import org.junit.runner.RunWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnitRunner;
 import org.quartz.JobDataMap;
 import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
@@ -76,7 +76,8 @@ public class FetcherJobTest {
 		String url = "https://ec.europa.eu/belgium/sites/belgium/files/og_image/poster_drapeau_europeen.jpg";
 		jobDataMap.put(WebFetcher.PROPERTY_READ_ROBOT, false);
 		jobDataMap.put(WebFetcher.PROPERTY_URLS, Arrays.asList(url));
-
+		jobDataMap.put(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, 30l);
+		
 		Result result = new Result();
 		result.setContent("<html></html>".getBytes());
 		result.setUrl(url);

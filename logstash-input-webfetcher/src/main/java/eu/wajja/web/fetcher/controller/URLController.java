@@ -24,14 +24,19 @@ public class URLController {
 	private Long timeout;
 	private String userAgent;
 	private String referer;
+	private String waitForCssSelector;
+	private Integer maxWaitForCssSelector;
+
 	private WebDriverController webDriverController = new WebDriverController();
 
-	public URLController(Proxy proxy, Long timeout, String userAgent, String referer) {
+	public URLController(Proxy proxy, Long timeout, String userAgent, String referer, String waitForCssSelector, Integer maxWaitForCssSelector) {
 
 		this.proxy = proxy;
 		this.timeout = timeout;
 		this.userAgent = userAgent;
 		this.referer = referer;
+		this.waitForCssSelector = waitForCssSelector;
+		this.maxWaitForCssSelector = maxWaitForCssSelector;
 	}
 
 	public Result getURL(String currentUrl, String initialUrl, String chromeDriver) {
@@ -78,7 +83,7 @@ public class URLController {
 
 					closeConnection(httpURLConnection);
 					result.setHeaders(httpURLConnection.getHeaderFields());
-					webDriverController.getURL(result, chromeDriver);
+					webDriverController.getURL(result, chromeDriver, waitForCssSelector, maxWaitForCssSelector);
 
 				}
 

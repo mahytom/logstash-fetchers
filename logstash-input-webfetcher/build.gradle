@@ -28,16 +28,7 @@ targetCompatibility = 1.8
 
 buildDir = "build/gradle"
 eclipse {
-  classpath {
-    defaultOutputDir = file('build/eclipse')
-    file.whenMerged {
-      entries.each { entry ->
-        if (entry.kind == 'src' && entry.hasProperty('output')) {
-          entry.output = entry.output.replace('bin/', "build/eclipse/")
-        }
-      }
-    }
-  }
+
 }
 
 buildscript {
@@ -82,8 +73,9 @@ dependencies {
     compile fileTree(dir: LOGSTASH_CORE_PATH, include: "**/logstash-core-?.?.?.jar")
 
     testCompile 'junit:junit:4.12'
+    testCompile group: 'net.bytebuddy', name: 'byte-buddy-agent', version: '1.10.14'
     testCompile 'org.jruby:jruby-complete:9.1.13.0'
-    testImplementation 'org.mockito:mockito-inline:2.13.0'
+    testImplementation 'org.mockito:mockito-inline:2.23.4'
 }
 
 clean {

@@ -57,6 +57,8 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_CHROME_DRIVERS = "chromeDrivers";
 	protected static final String PROPERTY_CRAWLER_USER_AGENT = "crawlerUserAgent";
 	protected static final String PROPERTY_CRAWLER_REFERER = "crawlerReferer";
+	protected static final String PROPERTY_WAIT_FOR_CSS_SELECTOR = "waitForCssSelector";
+	protected static final String PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR = "maxWaitForCssSelector";
 	protected static final String PROPERTY_READ_ROBOT = "readRobot";
 
 	public static final String GROUP_NAME = "group001";
@@ -79,6 +81,9 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_USER_AGENT = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_USER_AGENT, "Wajja Crawler");
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_REFERER = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_REFERER, "http://wajja.eu/");
 	public static final PluginConfigSpec<Boolean> CONFIG_READ_ROBOT = PluginConfigSpec.booleanSetting(PROPERTY_READ_ROBOT, true);
+
+	public static final PluginConfigSpec<String> CONFIG_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.stringSetting(PROPERTY_WAIT_FOR_CSS_SELECTOR);
+	public static final PluginConfigSpec<Long> CONFIG_MAX_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.numSetting(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, 30);
 
 	private final CountDownLatch done = new CountDownLatch(1);
 	protected volatile boolean stopped;
@@ -118,6 +123,9 @@ public class WebFetcher implements Input {
 		jobDataMap.put(PROPERTY_PROXY_USER, config.get(CONFIG_PROXY_USER));
 		jobDataMap.put(PROPERTY_PROXY_PASS, config.get(CONFIG_PROXY_PASS));
 
+		jobDataMap.put(PROPERTY_WAIT_FOR_CSS_SELECTOR, config.get(CONFIG_WAIT_FOR_CSS_SELECTOR));
+		jobDataMap.put(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, config.get(CONFIG_MAX_WAIT_FOR_CSS_SELECTOR));
+
 		this.threadId = id;
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.cron = config.get(CONFIG_CRON);
@@ -129,7 +137,7 @@ public class WebFetcher implements Input {
 	public void start(Consumer<Map<String, Object>> consumer) {
 
 		LOGGER.info("Starting a new Thread");
-		
+
 		try {
 
 			JobDataMap newJobDataMap = new JobDataMap(this.jobDataMap);
@@ -165,7 +173,7 @@ public class WebFetcher implements Input {
 	public void stop() {
 
 		LOGGER.info("Closing all scheduled jobs");
-		
+
 		try {
 			SchedulerBuilder.getScheduler().clear();
 		} catch (SchedulerException e) {
@@ -177,9 +185,9 @@ public class WebFetcher implements Input {
 
 	@Override
 	public void awaitStop() throws InterruptedException {
-		
+
 		LOGGER.info("Awaiting full stop");
-		
+
 		done.await();
 	}
 
@@ -205,7 +213,9 @@ public class WebFetcher implements Input {
 				CONFIG_READ_ROBOT,
 				CONFIG_CRAWLER_REFERER,
 				CONFIG_CRAWLER_USER_AGENT,
-				CONFIG_CHROME_DRIVERS);
+				CONFIG_CHROME_DRIVERS,
+				CONFIG_WAIT_FOR_CSS_SELECTOR,
+				CONFIG_MAX_WAIT_FOR_CSS_SELECTOR);
 	}
 
 	@Override

@@ -10,9 +10,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.Spy;
-import org.mockito.runners.MockitoJUnitRunner;
+import org.mockito.junit.MockitoJUnitRunner;
 
-import eu.wajja.web.fetcher.controller.URLController;;
+import eu.wajja.web.fetcher.controller.URLController;
 
 @RunWith(MockitoJUnitRunner.class)
 public class UrlControllerTest {

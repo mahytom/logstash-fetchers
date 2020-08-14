@@ -1,14 +1,16 @@
 package eu.wajja.web.fetcher.controller;
 
-
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.List;
 
 import org.apache.commons.lang3.StringUtils;
+import org.openqa.selenium.By;
 import org.openqa.selenium.JavascriptExecutor;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.remote.RemoteWebDriver;
@@ -22,7 +24,7 @@ public class WebDriverController {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(WebDriverController.class);
 
-	public Result getURL(Result result, String chromeDriver) throws MalformedURLException, WebDriverException {
+	public Result getURL(Result result, String chromeDriver, String waitForCssSelector, Integer maxWaitForCssSelector) throws MalformedURLException, WebDriverException {
 
 		WebDriver webDriver = null;
 
@@ -65,6 +67,29 @@ public class WebDriverController {
 		try {
 
 			webDriver.get(result.getUrl());
+
+			if (waitForCssSelector != null) {
+
+				List<WebElement> webElement = webDriver.findElements(By.cssSelector(waitForCssSelector));
+				int x = 0;
+
+				while (webElement.isEmpty()) {
+
+					Thread.sleep(1000);
+					webElement = webDriver.findElements(By.cssSelector(waitForCssSelector));
+					LOGGER.info("Waiting for css selector {} to appear on page {}", waitForCssSelector, result.getUrl());
+
+					if (x > maxWaitForCssSelector) {
+						LOGGER.info("Could not find css selector {} on page {}", waitForCssSelector, result.getUrl());
+						break;
+					}
+
+					x++;
+
+				}
+
+			}
+
 			String content = webDriver.getPageSource();
 
 			if (content == null || content.isEmpty()) {

@@ -120,6 +120,9 @@ public class FetcherJob implements Job {
 		this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
 		this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
 		this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
+		
+		String waitForCssSelector = dataMap.getString(WebFetcher.PROPERTY_WAIT_FOR_CSS_SELECTOR);
+		Long maxWaitForCssSelector = dataMap.getLong(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR);
 
 		if (proxyController == null) {
 
@@ -136,7 +139,9 @@ public class FetcherJob implements Job {
 					proxyController.getProxy(),
 					dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT),
 					dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT),
-					dataMap.getString(WebFetcher.PROPERTY_CRAWLER_REFERER));
+					dataMap.getString(WebFetcher.PROPERTY_CRAWLER_REFERER),
+					waitForCssSelector,
+					maxWaitForCssSelector.intValue());
 
 		}
 
