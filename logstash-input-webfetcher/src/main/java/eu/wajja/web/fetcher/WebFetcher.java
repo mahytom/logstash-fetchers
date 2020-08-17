@@ -60,7 +60,8 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_WAIT_FOR_CSS_SELECTOR = "waitForCssSelector";
 	protected static final String PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR = "maxWaitForCssSelector";
 	protected static final String PROPERTY_READ_ROBOT = "readRobot";
-
+	protected static final String PROPERTY_ROOT_URL = "rootUrl";
+	
 	public static final String GROUP_NAME = "group001";
 
 	public static final PluginConfigSpec<List<Object>> CONFIG_URLS = PluginConfigSpec.arraySetting(PROPERTY_URLS);
@@ -81,7 +82,8 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_USER_AGENT = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_USER_AGENT, "Wajja Crawler");
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_REFERER = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_REFERER, "http://wajja.eu/");
 	public static final PluginConfigSpec<Boolean> CONFIG_READ_ROBOT = PluginConfigSpec.booleanSetting(PROPERTY_READ_ROBOT, true);
-
+	public static final PluginConfigSpec<String> CONFIG_ROOT_URL = PluginConfigSpec.stringSetting(PROPERTY_ROOT_URL, null, false, false);
+	
 	public static final PluginConfigSpec<String> CONFIG_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.stringSetting(PROPERTY_WAIT_FOR_CSS_SELECTOR);
 	public static final PluginConfigSpec<Long> CONFIG_MAX_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.numSetting(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, 30);
 
@@ -117,7 +119,8 @@ public class WebFetcher implements Input {
 		jobDataMap.put(PROPERTY_CRAWLER_REFERER, config.get(CONFIG_CRAWLER_REFERER));
 		jobDataMap.put(PROPERTY_CRAWLER_USER_AGENT, config.get(CONFIG_CRAWLER_USER_AGENT));
 		jobDataMap.put(PROPERTY_READ_ROBOT, config.get(CONFIG_READ_ROBOT));
-
+		jobDataMap.put(PROPERTY_ROOT_URL, config.get(CONFIG_ROOT_URL));
+		
 		jobDataMap.put(PROPERTY_PROXY_HOST, config.get(CONFIG_PROXY_HOST));
 		jobDataMap.put(PROPERTY_PROXY_PORT, config.get(CONFIG_PROXY_PORT));
 		jobDataMap.put(PROPERTY_PROXY_USER, config.get(CONFIG_PROXY_USER));
@@ -215,6 +218,7 @@ public class WebFetcher implements Input {
 				CONFIG_CRAWLER_USER_AGENT,
 				CONFIG_CHROME_DRIVERS,
 				CONFIG_WAIT_FOR_CSS_SELECTOR,
+				CONFIG_ROOT_URL,
 				CONFIG_MAX_WAIT_FOR_CSS_SELECTOR);
 	}
 

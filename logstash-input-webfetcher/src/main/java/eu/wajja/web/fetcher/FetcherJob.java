@@ -90,6 +90,7 @@ public class FetcherJob implements Job {
 	private String threadId;
 	private String fireId;
 	private String crawlerUserAgent;
+	private String rootUrl;
 
 	private Set<String> processedSet = new HashSet<>();
 	private Set<String> processingSet = new HashSet<>();
@@ -117,10 +118,11 @@ public class FetcherJob implements Job {
 		this.maxDepth = dataMap.getLong(WebFetcher.PROPERTY_MAX_DEPTH);
 		this.maxPages = dataMap.getLong(WebFetcher.PROPERTY_MAX_PAGES);
 		this.threadId = dataMap.getString(WebFetcher.PROPERTY_THREAD_ID);
+		this.rootUrl = dataMap.getString(WebFetcher.PROPERTY_ROOT_URL);
 		this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
 		this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
 		this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
-		
+
 		String waitForCssSelector = dataMap.getString(WebFetcher.PROPERTY_WAIT_FOR_CSS_SELECTOR);
 		Long maxWaitForCssSelector = dataMap.getLong(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR);
 
@@ -392,7 +394,13 @@ public class FetcherJob implements Job {
 
 			}
 
-			Result result = urlController.getURL(urlString, rootUrl, chromeDriver);
+			Result result;
+
+			if (this.rootUrl != null) {
+				result = urlController.getURL(urlString, this.rootUrl, chromeDriver);
+			} else {
+				result = urlController.getURL(urlString, rootUrl, chromeDriver);
+			}
 
 			if (result != null && result.getContent() != null) {
 				extractContent(consumer, result, uuid, depth, legacyUrlMap);
