@@ -404,11 +404,12 @@ public class FetcherJob implements Job {
 
 			if (result != null && result.getContent() != null) {
 				extractContent(consumer, result, uuid, depth, legacyUrlMap);
-				processedSet.add(urlString);
 			} else {
 				LOGGER.info("URL {} is does not have content", urlStringTmp);
 			}
 
+			processedSet.add(urlString);
+			
 		} catch (Exception e) {
 			LOGGER.error("Failed to retrieve URL from thread {}, url {}", threadId, urlString, e);
 		}
