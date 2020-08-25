@@ -370,6 +370,7 @@ public class FetcherJob implements Job {
 				return;
 			} else {
 
+				processedSet.add(urlString);
 				Set<String> disallowedList = new HashSet<>();
 
 				if (disallowedLocations.containsKey("*")) {
@@ -408,8 +409,6 @@ public class FetcherJob implements Job {
 				LOGGER.info("URL {} is does not have content", urlStringTmp);
 			}
 
-			processedSet.add(urlString);
-			
 		} catch (Exception e) {
 			LOGGER.error("Failed to retrieve URL from thread {}, url {}", threadId, urlString, e);
 		}
@@ -433,18 +432,6 @@ public class FetcherJob implements Job {
 		metadata.put(METADATA_CONTEXT, result.getRootUrl());
 		metadata.put(METADATA_COMMAND, Command.ADD.toString());
 
-		Map<String, Object> loggerMap = new HashMap<>();
-
-		loggerMap.put(LOGGER_THREAD, this.threadId);
-		loggerMap.put(LOGGER_FIREID, this.fireId);
-		loggerMap.put(LOGGER_REFERENCE, metadata.get(METADATA_REFERENCE));
-		loggerMap.put(LOGGER_STATUS, result.getCode());
-		loggerMap.put(LOGGER_PAGES, maxPagesCount);
-		loggerMap.put(LOGGER_DEPTH, depth);
-		loggerMap.put(LOGGER_MESSAGE, result.getMessage());
-		loggerMap.put(LOGGER_ROOT_URL, result.getRootUrl());
-		loggerMap.put(LOGGER_SIZE, result.getContent().length);
-
 		if (excludedDataRegex.stream().noneMatch(ex -> result.getUrl().matches(ex)) && result.getUrl().startsWith(result.getRootUrl())) {
 
 			maxPagesCount++;
@@ -452,20 +439,15 @@ public class FetcherJob implements Job {
 			String hex = DigestUtils.md5Hex(result.getContent());
 
 			if (legacyUrlMap.containsKey(result.getUrl()) && legacyUrlMap.get(result.getUrl()).equals(hex)) {
-				loggerMap.put(LOGGER_ACTION, "exclude_data");
+				log("exclude_data", result, depth, metadata);
 			} else {
 				consumer.accept(metadata);
-				loggerMap.put(LOGGER_ACTION, "include_data");
+				log("include_data", result, depth, metadata);
 				legacyUrlMap.put(result.getUrl(), hex);
 			}
 
 		} else {
-			loggerMap.put(LOGGER_ACTION, "exclude_data");
-		}
-
-		if (LOGGER.isInfoEnabled()) {
-			loggerMap.put(LOGGER_URL, result.getUrl());
-			LOGGER.info(objectMapper.writeValueAsString(loggerMap));
+			log("exclude_data", result, depth, metadata);
 		}
 
 		List<String> childPages = new ArrayList<>();
@@ -487,19 +469,12 @@ public class FetcherJob implements Job {
 					.filter(href -> {
 
 						Boolean anyMatch = excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex));
-						loggerMap.put(LOGGER_URL, href);
 
 						if (anyMatch) {
-							loggerMap.put(LOGGER_ACTION, "exclude_link");
-						} else {
-							loggerMap.put(LOGGER_ACTION, "include_link");
+							log("exclude_link", href, result, depth, metadata);
+						} else if (!processingSet.contains(href)) {
+							log("include_link", href, result, depth, metadata);
 							processingSet.add(href);
-						}
-
-						try {
-							LOGGER.info(objectMapper.writeValueAsString(loggerMap));
-						} catch (IOException e1) {
-							LOGGER.info("Failed to parse JSON", e1);
 						}
 
 						return !anyMatch;
@@ -521,6 +496,26 @@ public class FetcherJob implements Job {
 
 		return new ArrayList<>();
 
+	}
+
+	private void log(String action, String url, Result result, Long depth, Map<String, Object> metadata) {
+
+		LOGGER.info("{} : {}, {} : {}, {} : {}, {} : {}",
+				LOGGER_ACTION, action,
+				LOGGER_ROOT_URL, result.getRootUrl(),
+				LOGGER_URL, result.getUrl(),
+				LOGGER_REFERENCE, metadata.get(METADATA_REFERENCE),
+				LOGGER_THREAD, this.threadId,
+				LOGGER_FIREID, this.fireId,
+				LOGGER_STATUS, result.getCode(),
+				LOGGER_PAGES, maxPagesCount,
+				LOGGER_DEPTH, depth,
+				LOGGER_MESSAGE, result.getMessage(),
+				LOGGER_SIZE, result.getContent().length);
+	}
+
+	private void log(String action, Result result, Long depth, Map<String, Object> metadata) {
+		log(action, result.getUrl(), result, depth, metadata);
 	}
 
 	private String getUrlString(String urlString, String rootUrl) {
