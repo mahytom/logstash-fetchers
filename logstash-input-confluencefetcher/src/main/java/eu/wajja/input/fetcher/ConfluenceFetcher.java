@@ -10,8 +10,6 @@ import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import javax.xml.namespace.QName;
-
 import org.quartz.CronScheduleBuilder;
 import org.quartz.JobBuilder;
 import org.quartz.JobDataMap;
@@ -21,11 +19,7 @@ import org.quartz.TriggerBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.atlassian.confluence.rest.client.RemoteAttachmentServiceImpl;
-import com.atlassian.confluence.rest.client.RemoteContentRestrictionServiceImpl;
-import com.atlassian.confluence.rest.client.RemoteContentServiceImpl;
 import com.atlassian.confluence.rest.client.RemotePersonServiceImpl;
-import com.atlassian.confluence.rest.client.RemoteSpaceServiceImpl;
 import com.atlassian.confluence.rest.client.RestClientFactory;
 import com.atlassian.confluence.rest.client.authentication.AuthenticatedWebResourceProvider;
 import com.atlassian.confluence.rest.client.remoteservice.people.RemoteGroupServiceImpl;
@@ -39,10 +33,7 @@ import co.elastic.logstash.api.Input;
 import co.elastic.logstash.api.LogstashPlugin;
 import co.elastic.logstash.api.PluginConfigSpec;
 import eu.wajja.input.fetcher.config.SchedulerBuilder;
-import eu.wajja.input.fetcher.controller.ConfluenceDataFetcher;
 import eu.wajja.input.fetcher.controller.ConfluenceGroupFetcher;
-import eu.wajja.input.fetcher.soap.confluence.ConfluenceSoapService;
-import eu.wajja.input.fetcher.soap.confluence.ConfluenceSoapServiceServiceLocator;
 
 /**
  * Fetches pages from a confluence page
@@ -187,62 +178,62 @@ public class ConfluenceFetcher implements Input {
 
 			}
 
-			if (enableDataSync) {
-
-				try {
-
-					String confluenceLocation = this.baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2?wsdl";
-					String confluenceService = "ConfluenceSoapServiceService";
-					String confluenceServicepoint = this.baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2";
-
-					QName confluenceQname = new QName(confluenceServicepoint, confluenceService);
-					ConfluenceSoapServiceServiceLocator serviceLocator = new ConfluenceSoapServiceServiceLocator(confluenceLocation, confluenceQname, this.baseUrl);
-					serviceLocator.setConfluenceserviceV2EndpointAddress(confluenceServicepoint);
-
-					ConfluenceSoapService soapService = serviceLocator.getConfluenceserviceV2();
-					String soapToken = soapService.login(username, password);
-
-					JobDataMap newJobDataMap = new JobDataMap();
-					newJobDataMap.put("remoteSpaceServiceImpl", new RemoteSpaceServiceImpl(provider, this.executorData));
-					newJobDataMap.put("remoteContentServiceImpl", new RemoteContentServiceImpl(provider, this.executorData));
-					newJobDataMap.put("remoteAttachmentServiceImpl", new RemoteAttachmentServiceImpl(provider, this.executorData));
-					newJobDataMap.put("remoteContentRestrictionServiceImpl", new RemoteContentRestrictionServiceImpl(provider, this.executorData));
-					newJobDataMap.put("consumer", consumer);
-					newJobDataMap.put("batchSize", this.dataBatchSize);
-					newJobDataMap.put("sites", this.spaces);
-					newJobDataMap.put("url", this.baseUrl);
-					newJobDataMap.put("username", this.username);
-					newJobDataMap.put("password", this.password);
-					newJobDataMap.put("dataAttachmentsInclude", this.dataAttachmentsInclude);
-					newJobDataMap.put("dataAttachmentsExclude", this.dataAttachmentsExclude);
-					newJobDataMap.put("dataAttachmentsMaxSize", this.dataAttachmentsMaxSize);
-					newJobDataMap.put("dataPageExclude", this.dataPageExclude);
-					newJobDataMap.put("dataSpaceExclude", this.dataSpaceExclude);
-					newJobDataMap.put("dataFolder", this.dataFolder);
-					newJobDataMap.put("dataSyncThreadSize", this.dataSyncThreadSize);
-
-					newJobDataMap.put("soapService", soapService);
-					newJobDataMap.put("soapToken", soapToken);
-
-					String uuid = UUID.randomUUID().toString();
-
-					JobDetail job = JobBuilder.newJob(ConfluenceDataFetcher.class)
-							.withIdentity(uuid, GROUP_NAME)
-							.setJobData(newJobDataMap)
-							.build();
-
-					Trigger trigger = TriggerBuilder.newTrigger()
-							.withIdentity(uuid, GROUP_NAME)
-							.startNow()
-							.withSchedule(CronScheduleBuilder.cronSchedule(this.cronData))
-							.build();
-
-					SchedulerBuilder.getScheduler().scheduleJob(job, trigger);
-
-				} catch (Exception e) {
-					LOGGER.error("Failed fetch data", e);
-				}
-			}
+//			if (enableDataSync) {
+//
+//				try {
+//
+//					String confluenceLocation = this.baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2?wsdl";
+//					String confluenceService = "ConfluenceSoapServiceService";
+//					String confluenceServicepoint = this.baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2";
+//
+//					QName confluenceQname = new QName(confluenceServicepoint, confluenceService);
+//					ConfluenceSoapServiceServiceLocator serviceLocator = new ConfluenceSoapServiceServiceLocator(confluenceLocation, confluenceQname, this.baseUrl);
+//					serviceLocator.setConfluenceserviceV2EndpointAddress(confluenceServicepoint);
+//
+//					ConfluenceSoapService soapService = serviceLocator.getConfluenceserviceV2();
+//					String soapToken = soapService.login(username, password);
+//
+//					JobDataMap newJobDataMap = new JobDataMap();
+//					newJobDataMap.put("remoteSpaceServiceImpl", new RemoteSpaceServiceImpl(provider, this.executorData));
+//					newJobDataMap.put("remoteContentServiceImpl", new RemoteContentServiceImpl(provider, this.executorData));
+//					newJobDataMap.put("remoteAttachmentServiceImpl", new RemoteAttachmentServiceImpl(provider, this.executorData));
+//					newJobDataMap.put("remoteContentRestrictionServiceImpl", new RemoteContentRestrictionServiceImpl(provider, this.executorData));
+//					newJobDataMap.put("consumer", consumer);
+//					newJobDataMap.put("batchSize", this.dataBatchSize);
+//					newJobDataMap.put("sites", this.spaces);
+//					newJobDataMap.put("url", this.baseUrl);
+//					newJobDataMap.put("username", this.username);
+//					newJobDataMap.put("password", this.password);
+//					newJobDataMap.put("dataAttachmentsInclude", this.dataAttachmentsInclude);
+//					newJobDataMap.put("dataAttachmentsExclude", this.dataAttachmentsExclude);
+//					newJobDataMap.put("dataAttachmentsMaxSize", this.dataAttachmentsMaxSize);
+//					newJobDataMap.put("dataPageExclude", this.dataPageExclude);
+//					newJobDataMap.put("dataSpaceExclude", this.dataSpaceExclude);
+//					newJobDataMap.put("dataFolder", this.dataFolder);
+//					newJobDataMap.put("dataSyncThreadSize", this.dataSyncThreadSize);
+//
+//					newJobDataMap.put("soapService", soapService);
+//					newJobDataMap.put("soapToken", soapToken);
+//
+//					String uuid = UUID.randomUUID().toString();
+//
+//					JobDetail job = JobBuilder.newJob(ConfluenceDataFetcher.class)
+//							.withIdentity(uuid, GROUP_NAME)
+//							.setJobData(newJobDataMap)
+//							.build();
+//
+//					Trigger trigger = TriggerBuilder.newTrigger()
+//							.withIdentity(uuid, GROUP_NAME)
+//							.startNow()
+//							.withSchedule(CronScheduleBuilder.cronSchedule(this.cronData))
+//							.build();
+//
+//					SchedulerBuilder.getScheduler().scheduleJob(job, trigger);
+//
+//				} catch (Exception e) {
+//					LOGGER.error("Failed fetch data", e);
+//				}
+//			}
 
 			while (!stopped) {
 				Thread.sleep(1000);
