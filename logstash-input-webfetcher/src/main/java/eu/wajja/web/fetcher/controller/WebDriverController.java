@@ -102,6 +102,7 @@ public class WebDriverController {
 			LOGGER.error("Failed to retrieve page {}", result.getUrl());
 		} finally {
 			webDriver.close();
+			webDriver.quit();
 		}
 
 		return result;

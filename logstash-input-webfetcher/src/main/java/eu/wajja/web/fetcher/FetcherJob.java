@@ -198,7 +198,7 @@ public class FetcherJob implements Job {
 					break;
 				}
 
-				List<String> urls = processingSet.stream().filter(u -> !processedSet.contains(u)).collect(Collectors.toList());
+				Set<String> urls = processingSet.stream().filter(u -> !processedSet.contains(u)).collect(Collectors.toSet());
 
 				for (String url : urls) {
 
@@ -216,7 +216,7 @@ public class FetcherJob implements Job {
 
 						try {
 							LOGGER.info("Waiting for site {} to be finished, active threads left {}, queue {}/{}", initialUrl, threadPoolExecutors[x].getActiveCount(), processedSet.size(), processingSet.size());
-							Thread.sleep(500);
+							Thread.sleep(5000);
 						} catch (InterruptedException e) {
 							LOGGER.error("Failed to sleep in thread", e);
 							Thread.currentThread().interrupt();
@@ -355,22 +355,13 @@ public class FetcherJob implements Job {
 
 	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth, String chromeDriver, Map<String, String> legacyUrlMap) {
 
-		String urlString = null;
+		String rootUrlTmp = (this.rootUrl != null) ? this.rootUrl : rootUrl;
+		String urlString = getUrlString(urlStringTmp, rootUrlTmp);
 
 		try {
 
-			if (maxPages != 0 && maxPagesCount >= maxPages) {
-				return;
-			}
+			if (maxPages != 0 && maxPagesCount <= maxPages && !processedSet.contains(urlString)) {
 
-			urlString = getUrlString(urlStringTmp, rootUrl);
-			String uuid = UUID.randomUUID().toString();
-
-			if (processedSet.contains(urlString)) {
-				return;
-			} else {
-
-				processedSet.add(urlString);
 				Set<String> disallowedList = new HashSet<>();
 
 				if (disallowedLocations.containsKey("*")) {
@@ -393,29 +384,24 @@ public class FetcherJob implements Job {
 					}
 				}
 
+				Result result = urlController.getURL(urlString, rootUrlTmp, chromeDriver);
+
+				if (result != null && result.getContent() != null) {
+					extractContent(consumer, result, depth, legacyUrlMap);
+				} else {
+					LOGGER.info("URL {} is does not have content", urlStringTmp);
+				}
 			}
 
-			Result result;
-
-			if (this.rootUrl != null) {
-				result = urlController.getURL(urlString, this.rootUrl, chromeDriver);
-			} else {
-				result = urlController.getURL(urlString, rootUrl, chromeDriver);
-			}
-
-			if (result != null && result.getContent() != null) {
-				extractContent(consumer, result, uuid, depth, legacyUrlMap);
-			} else {
-				LOGGER.info("URL {} is does not have content", urlStringTmp);
-			}
-
+			processedSet.add(urlString);
+			
 		} catch (Exception e) {
 			LOGGER.error("Failed to retrieve URL from thread {}, url {}", threadId, urlString, e);
 		}
 
 	}
 
-	private List<String> extractContent(Consumer<Map<String, Object>> consumer, Result result, String uuid, Long depth, Map<String, String> legacyUrlMap) throws IOException {
+	private void extractContent(Consumer<Map<String, Object>> consumer, Result result, Long depth, Map<String, String> legacyUrlMap) throws IOException {
 
 		byte[] bytes = result.getContent();
 		Map<String, List<String>> headers = result.getHeaders();
@@ -427,7 +413,7 @@ public class FetcherJob implements Job {
 		metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
 		metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
 		metadata.put(METADATA_URL, result.getUrl());
-		metadata.put(METADATA_UUID, uuid);
+		metadata.put(METADATA_UUID, UUID.randomUUID().toString());
 		metadata.put(METADATA_STATUS, 200);
 		metadata.put(METADATA_CONTEXT, result.getRootUrl());
 		metadata.put(METADATA_COMMAND, Command.ADD.toString());
@@ -450,8 +436,6 @@ public class FetcherJob implements Job {
 			log("exclude_data", result, depth, metadata);
 		}
 
-		List<String> childPages = new ArrayList<>();
-
 		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
 
 			String bodyHtml = IOUtils.toString(bytes, StandardCharsets.UTF_8.name());
@@ -459,51 +443,57 @@ public class FetcherJob implements Job {
 			Elements elements = document.getElementsByAttribute("href");
 
 			String simpleUrlString = result.getRootUrl().replace(HTTP, "").replace(HTTPS, "");
+			Long newDepth = depth + 1;
 
-			childPages = elements.stream().map(e -> e.attr("href"))
+			// Excluded Pages - used just for logging
+
+			Set<String> excludedChildPages = elements.stream().map(e -> e.attr("href"))
 					.filter(href -> !href.equals("/") && !href.startsWith("//"))
 					.map(url -> getUrlString(url, result.getRootUrl()))
 					.filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
 					.filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
 					.filter(href -> !processingSet.contains(href))
-					.filter(href -> {
-
-						Boolean anyMatch = excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex));
-
-						if (anyMatch) {
-							log("exclude_link", href, result, depth, metadata);
-						} else if (!processingSet.contains(href)) {
-							log("include_link", href, result, depth, metadata);
-							processingSet.add(href);
-						}
-
-						return !anyMatch;
-					})
+					.filter(href -> excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
 					.sorted()
-					.collect(Collectors.toList());
+					.collect(Collectors.toSet());
 
-			LOGGER.info("Child URLs after filtering from URL {} : {}", result.getUrl(), childPages);
+			excludedChildPages.stream()
+					.filter(href -> !processingSet.contains(href) && maxDepth == 0 || newDepth <= maxDepth)
+					.forEach(href -> log("exclude_link", href, result, depth, metadata));
 
-			metadata.put(METADATA_CHILD, new ArrayList<>(new HashSet<>(childPages)));
+			// Included Pages - to be crawled
+
+			Set<String> includedChildPages = elements.stream().map(e -> e.attr("href"))
+					.filter(href -> !href.equals("/") && !href.startsWith("//"))
+					.map(url -> getUrlString(url, result.getRootUrl()))
+					.filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
+					.filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
+					.filter(href -> !processingSet.contains(href))
+					.filter(href -> !excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
+					.sorted()
+					.collect(Collectors.toSet());
+
+			includedChildPages.stream()
+					.filter(href -> !processingSet.contains(href) && maxDepth == 0 || newDepth <= maxDepth)
+					.forEach(href -> {
+						log("include_link", href, result, depth, metadata);
+						processingSet.add(href);
+					});
+
+			LOGGER.info("Child URLs after filtering from URL {} : {}", result.getUrl(), includedChildPages);
+
+			metadata.put(METADATA_CHILD, new ArrayList<>(includedChildPages));
 
 		}
-
-		Long newDepth = depth + 1;
-
-		if (maxDepth == 0 || newDepth <= maxDepth) {
-			return childPages;
-		}
-
-		return new ArrayList<>();
 
 	}
 
 	private void log(String action, String url, Result result, Long depth, Map<String, Object> metadata) {
 
-		LOGGER.info("{} : {}, {} : {}, {} : {}, {} : {}",
+		LOGGER.info("{} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}",
 				LOGGER_ACTION, action,
 				LOGGER_ROOT_URL, result.getRootUrl(),
-				LOGGER_URL, result.getUrl(),
+				LOGGER_URL, url,
 				LOGGER_REFERENCE, metadata.get(METADATA_REFERENCE),
 				LOGGER_THREAD, this.threadId,
 				LOGGER_FIREID, this.fireId,
@@ -557,17 +547,9 @@ public class FetcherJob implements Job {
 				urlString = rootUrl + urlString;
 			}
 
-//			if (urlString.endsWith("/") && !urlString.equals(rootUrl)) {
-//				urlString = urlString.substring(0, urlString.lastIndexOf('/'));
-//			}
-
 		} catch (MalformedURLException e) {
 			LOGGER.error("Failed to parse url {}", urlString, e);
 		}
-
-//		if (urlString.endsWith("/")) {
-//			urlString = urlString.substring(0, urlString.length() - 1);
-//		}
 
 		return urlString;
 	}
