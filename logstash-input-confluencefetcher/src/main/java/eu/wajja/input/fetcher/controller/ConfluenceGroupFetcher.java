@@ -35,6 +35,7 @@ public class ConfluenceGroupFetcher implements Job {
 	private static final String METADATA_REFERENCE = "reference";
 	private static final String METADATA_GROUPS = "groups";
 	private static final String METADATA_COMMAND = "command";
+	private static final String METADATA_URL = "url";
 
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
@@ -42,8 +43,10 @@ public class ConfluenceGroupFetcher implements Job {
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
 
 		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get("consumer");
+
 		RemotePersonServiceImpl remotePersonServiceImpl = (RemotePersonServiceImpl) dataMap.get("remotePersonServiceImpl");
 		RemoteGroupServiceImpl groupServiceImpl = (RemoteGroupServiceImpl) dataMap.get("remoteGroupServiceImpl");
+		
 		Long batchSize = (Long) dataMap.get("batchSize");
 
 		int size = 0;

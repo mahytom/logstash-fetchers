@@ -12,7 +12,7 @@ public class ConfluenceSoapServiceServiceLocator extends org.apache.axis.client.
 	private static String baseUrl;
 
 	public ConfluenceSoapServiceServiceLocator(java.lang.String wsdlLoc, javax.xml.namespace.QName sName, String baseUrl) throws javax.xml.rpc.ServiceException {
-		super(wsdlLoc, sName);
+//		super(wsdlLoc, sName);
 		ConfluenceSoapServiceServiceLocator.baseUrl = baseUrl;
 	}
 

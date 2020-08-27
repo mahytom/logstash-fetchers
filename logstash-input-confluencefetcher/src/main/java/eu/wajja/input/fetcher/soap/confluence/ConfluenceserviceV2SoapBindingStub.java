@@ -4380,13 +4380,6 @@ public class ConfluenceserviceV2SoapBindingStub extends Stub implements Confluen
 		cachedSerFactories.add(beansf);
 		cachedDeserFactories.add(beandf);
 
-		qName = new javax.xml.namespace.QName("http://xml.apache.org/xml-soap", "mapItem");
-		cachedSerQNames.add(qName);
-		cls = eu.wajja.input.fetcher.model.MapItem.class;
-		cachedSerClasses.add(cls);
-		cachedSerFactories.add(beansf);
-		cachedDeserFactories.add(beandf);
-
 		qName = new javax.xml.namespace.QName(baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2", "ArrayOf_tns1_RemoteAttachment");
 		cachedSerQNames.add(qName);
 		cls = RemoteAttachment[].class;

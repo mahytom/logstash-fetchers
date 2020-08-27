@@ -150,22 +150,22 @@ public class ConfluenceFetcher implements Input {
 	@Override
 	public void start(Consumer<Map<String, Object>> consumer) {
 
-		Client client = RestClientFactory.newClient();
 
-		try (AuthenticatedWebResourceProvider provider = new AuthenticatedWebResourceProvider(client, baseUrl, "/")) {
+		try (AuthenticatedWebResourceProvider provider = AuthenticatedWebResourceProvider.createWithNewClient(this.baseUrl)) {
 
 			provider.setAuthContext(username, password.toCharArray());
-
+			ListeningExecutorService executor = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(this.dataSyncThreadSize.intValue()));
+			
 			if (enableUserSync) {
 
 				try {
 
 					JobDataMap newJobDataMap = new JobDataMap();
-					newJobDataMap.put("remotePersonServiceImpl", new RemotePersonServiceImpl(provider, this.executorUser));
-					newJobDataMap.put("remoteGroupServiceImpl", new RemoteGroupServiceImpl(provider, this.executorUser));
 					newJobDataMap.put("consumer", consumer);
 					newJobDataMap.put("batchSize", this.userBatchSize);
-
+					newJobDataMap.put("remotePersonServiceImpl", new RemotePersonServiceImpl(provider, executor));
+					newJobDataMap.put("remoteGroupServiceImpl", new RemoteGroupServiceImpl(provider, executor));
+					
 					String uuid = UUID.randomUUID().toString();
 
 					JobDetail job = JobBuilder.newJob(ConfluenceGroupFetcher.class)
@@ -191,6 +191,9 @@ public class ConfluenceFetcher implements Input {
 
 				try {
 
+					JobDataMap newJobDataMap = new JobDataMap();
+					
+					// SOAP
 					String confluenceLocation = this.baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2?wsdl";
 					String confluenceService = "ConfluenceSoapServiceService";
 					String confluenceServicepoint = this.baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2";
@@ -201,14 +204,19 @@ public class ConfluenceFetcher implements Input {
 
 					ConfluenceSoapService soapService = serviceLocator.getConfluenceserviceV2();
 					String soapToken = soapService.login(username, password);
-
-					JobDataMap newJobDataMap = new JobDataMap();
-					newJobDataMap.put("remoteSpaceServiceImpl", new RemoteSpaceServiceImpl(provider, this.executorData));
-					newJobDataMap.put("remoteContentServiceImpl", new RemoteContentServiceImpl(provider, this.executorData));
-					newJobDataMap.put("remoteAttachmentServiceImpl", new RemoteAttachmentServiceImpl(provider, this.executorData));
-					newJobDataMap.put("remoteContentRestrictionServiceImpl", new RemoteContentRestrictionServiceImpl(provider, this.executorData));
+				
+					newJobDataMap.put("soapService", soapService);
+					newJobDataMap.put("soapToken", soapToken);
+					
+					// REST
+				
+					newJobDataMap.put("remoteSpaceServiceImpl", new RemoteSpaceServiceImpl(provider, executor));
+					newJobDataMap.put("remoteContentServiceImpl", new RemoteContentServiceImpl(provider, executor));
+					newJobDataMap.put("remoteAttachmentServiceImpl", new RemoteAttachmentServiceImpl(provider, executor));
+					newJobDataMap.put("remoteContentRestrictionServiceImpl", new RemoteContentRestrictionServiceImpl(provider, executor));
+					
+					// Generic
 					newJobDataMap.put("consumer", consumer);
-					newJobDataMap.put("batchSize", this.dataBatchSize);
 					newJobDataMap.put("sites", this.spaces);
 					newJobDataMap.put("url", this.baseUrl);
 					newJobDataMap.put("username", this.username);
@@ -220,10 +228,7 @@ public class ConfluenceFetcher implements Input {
 					newJobDataMap.put("dataSpaceExclude", this.dataSpaceExclude);
 					newJobDataMap.put("dataFolder", this.dataFolder);
 					newJobDataMap.put("dataSyncThreadSize", this.dataSyncThreadSize);
-
-					newJobDataMap.put("soapService", soapService);
-					newJobDataMap.put("soapToken", soapToken);
-
+					
 					String uuid = UUID.randomUUID().toString();
 
 					JobDetail job = JobBuilder.newJob(ConfluenceDataFetcher.class)
