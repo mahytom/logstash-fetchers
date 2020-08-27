@@ -49,7 +49,6 @@ import com.atlassian.confluence.api.model.permissions.OperationKey;
 import com.atlassian.confluence.rest.client.RemoteAttachmentServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteContentRestrictionServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteContentServiceImpl;
-import com.atlassian.confluence.rest.client.RemoteSpacePropertyServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteSpaceService.RemoteSpaceFinder;
 import com.atlassian.confluence.rest.client.RemoteSpaceServiceImpl;
 import com.atlassian.confluence.rest.client.authentication.AuthenticatedWebResourceProvider;
@@ -116,7 +115,6 @@ public class ConfluenceDataFetcher implements Job {
 	private Expansion expansionPermissions = new Expansion("permissions");
 
 	private RemoteSpaceServiceImpl remoteSpaceServiceImpl;
-	private RemoteSpacePropertyServiceImpl remoteSpacePropertyServiceImpl;
 	private RemoteContentServiceImpl remoteContentServiceImpl;
 	private RemoteContentRestrictionServiceImpl remoteContentRestrictionServiceImpl;
 	private RemoteAttachmentServiceImpl remoteAttachmentServiceImpl;
@@ -149,12 +147,10 @@ public class ConfluenceDataFetcher implements Job {
 		ListeningExecutorService executor = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(threads.intValue()));
 
 		this.remoteSpaceServiceImpl = new RemoteSpaceServiceImpl(provider, executor);
-		this.remoteSpacePropertyServiceImpl = new RemoteSpacePropertyServiceImpl(provider, executor);
 		this.remoteContentServiceImpl = new RemoteContentServiceImpl(provider, executor);
 		this.remoteContentRestrictionServiceImpl = new RemoteContentRestrictionServiceImpl(provider, executor);
 		this.remoteAttachmentServiceImpl = new RemoteAttachmentServiceImpl(provider, executor);
 
-		
 		this.dataAttachmentsInclude = (List<String>) dataMap.getOrDefault("dataAttachmentsInclude", new ArrayList<>());
 		this.dataAttachmentsExclude = (List<String>) dataMap.getOrDefault("dataAttachmentsExclude", new ArrayList<>());
 		this.dataAttachmentsMaxSize = (Long) dataMap.get("dataAttachmentsMaxSize");
@@ -164,7 +160,6 @@ public class ConfluenceDataFetcher implements Job {
 
 		this.threads = (Long) dataMap.get("dataSyncThreadSize");
 		this.executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
-
 
 		/** Get spaces and start reading from them **/
 

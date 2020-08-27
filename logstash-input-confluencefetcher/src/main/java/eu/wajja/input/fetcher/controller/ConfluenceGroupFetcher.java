@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -23,7 +24,10 @@ import com.atlassian.confluence.api.model.people.Person;
 import com.atlassian.confluence.api.service.exceptions.NotFoundException;
 import com.atlassian.confluence.rest.client.RemotePersonServiceImpl;
 import com.atlassian.confluence.rest.client.RemotePersonServiceImpl.RemotePersonFinderImpl;
+import com.atlassian.confluence.rest.client.authentication.AuthenticatedWebResourceProvider;
 import com.atlassian.confluence.rest.client.remoteservice.people.RemoteGroupServiceImpl;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
 import com.sun.jersey.api.client.ClientHandlerException;
 
 import eu.wajja.input.fetcher.enums.Command;
@@ -35,15 +39,27 @@ public class ConfluenceGroupFetcher implements Job {
 	private static final String METADATA_REFERENCE = "reference";
 	private static final String METADATA_GROUPS = "groups";
 	private static final String METADATA_COMMAND = "command";
-
+	private static final String METADATA_URL = "url";
+	
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
 
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
 
 		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get("consumer");
-		RemotePersonServiceImpl remotePersonServiceImpl = (RemotePersonServiceImpl) dataMap.get("remotePersonServiceImpl");
-		RemoteGroupServiceImpl groupServiceImpl = (RemoteGroupServiceImpl) dataMap.get("remoteGroupServiceImpl");
+
+		String username = dataMap.getString("username");
+		String password = dataMap.getString("password");
+		String url = dataMap.getString(METADATA_URL);
+
+		AuthenticatedWebResourceProvider provider = AuthenticatedWebResourceProvider.createWithNewClient(url);
+		provider.setAuthContext(username, password.toCharArray());
+
+		Long threads = (Long) dataMap.get("dataSyncThreadSize");
+		ListeningExecutorService executor = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(threads.intValue()));
+
+		RemotePersonServiceImpl remotePersonServiceImpl = new RemotePersonServiceImpl(provider, executor);
+		RemoteGroupServiceImpl groupServiceImpl = new RemoteGroupServiceImpl(provider, executor);
 		Long batchSize = (Long) dataMap.get("batchSize");
 
 		int size = 0;
