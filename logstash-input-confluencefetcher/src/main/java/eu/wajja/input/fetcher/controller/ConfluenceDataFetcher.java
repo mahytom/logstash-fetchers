@@ -169,15 +169,18 @@ public class ConfluenceDataFetcher implements Job {
 			try {
 				List<String> spacePermissions = new ArrayList<>();
 
-				ConfluenceSoapService soapService = (ConfluenceSoapService) dataMap.get("soapService");
-				String soapToken = dataMap.getString("soapToken");
+				if (dataMap.containsKey("soapService") && dataMap.containsKey("soapToken")) {
 
-				RemoteSpacePermissionSet remoteSpacePermissionSet = soapService.getSpacePermissionSet(soapToken, space.getKey(), "VIEWSPACE");
-				RemoteContentPermission[] remoteContentPermissions = remoteSpacePermissionSet.getSpacePermissions();
+					ConfluenceSoapService soapService = (ConfluenceSoapService) dataMap.get("soapService");
+					String soapToken = dataMap.getString("soapToken");
 
-				for (RemoteContentPermission remoteContentPermission : remoteContentPermissions) {
-					if (remoteContentPermission.getGroupName() != null) {
-						spacePermissions.add(remoteContentPermission.getGroupName());
+					RemoteSpacePermissionSet remoteSpacePermissionSet = soapService.getSpacePermissionSet(soapToken, space.getKey(), "VIEWSPACE");
+					RemoteContentPermission[] remoteContentPermissions = remoteSpacePermissionSet.getSpacePermissions();
+
+					for (RemoteContentPermission remoteContentPermission : remoteContentPermissions) {
+						if (remoteContentPermission.getGroupName() != null) {
+							spacePermissions.add(remoteContentPermission.getGroupName());
+						}
 					}
 				}
 

@@ -170,10 +170,6 @@ public class ConfluenceDataFetcherTest {
 		jobDataMap.put("dataSyncThreadSize", 1l);
 
 		Mockito.when(jobDetail.getJobDataMap()).thenReturn(jobDataMap);
-
-		
-		Mockito.when(confluenceSoapService.getSpacePermissionSet(Mockito.isNull(), Mockito.anyString(), Mockito.anyString())).thenReturn(remoteSpacePermissionSet);
-		Mockito.when(remoteSpacePermissionSet.getSpacePermissions()).thenReturn(new RemoteContentPermission[0]);
 		
 		Mockito.when(remoteSpaceServiceImpl.find(Mockito.any()))
 				.thenReturn(remoteSpaceFinderImpl);
