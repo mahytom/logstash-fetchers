@@ -52,11 +52,14 @@ import com.atlassian.confluence.rest.client.RemoteContentServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteSpaceService.RemoteSpaceFinder;
 import com.atlassian.confluence.rest.client.RemoteSpaceServiceImpl;
 import com.atlassian.confluence.rest.client.authentication.AuthenticatedWebResourceProvider;
+import com.atlassian.confluence.rpc.soap.beans.RemoteContentPermission;
+import com.atlassian.confluence.rpc.soap.beans.RemoteSpacePermissionSet;
 import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 
 import eu.wajja.input.fetcher.enums.Command;
 import eu.wajja.input.fetcher.model.Permissions;
+import eu.wajja.input.fetcher.soap.confluence.ConfluenceSoapService;
 import eu.wajja.input.fetcher.utils.UrlHelper;
 
 public class ConfluenceDataFetcher implements Job {
@@ -140,16 +143,10 @@ public class ConfluenceDataFetcher implements Job {
 		String password = dataMap.getString("password");
 		String url = dataMap.getString(METADATA_URL);
 
-		AuthenticatedWebResourceProvider provider = AuthenticatedWebResourceProvider.createWithNewClient(url);
-		provider.setAuthContext(username, password.toCharArray());
-
-		Long threads = (Long) dataMap.get("dataSyncThreadSize");
-		ListeningExecutorService executor = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(threads.intValue()));
-
-		this.remoteSpaceServiceImpl = new RemoteSpaceServiceImpl(provider, executor);
-		this.remoteContentServiceImpl = new RemoteContentServiceImpl(provider, executor);
-		this.remoteContentRestrictionServiceImpl = new RemoteContentRestrictionServiceImpl(provider, executor);
-		this.remoteAttachmentServiceImpl = new RemoteAttachmentServiceImpl(provider, executor);
+		this.remoteSpaceServiceImpl = (RemoteSpaceServiceImpl) dataMap.get("remoteSpaceServiceImpl");
+		this.remoteContentServiceImpl = (RemoteContentServiceImpl) dataMap.get("remoteContentServiceImpl");
+		this.remoteContentRestrictionServiceImpl = (RemoteContentRestrictionServiceImpl) dataMap.get("remoteContentRestrictionServiceImpl");
+		this.remoteAttachmentServiceImpl = (RemoteAttachmentServiceImpl) dataMap.get("remoteAttachmentServiceImpl");
 
 		this.dataAttachmentsInclude = (List<String>) dataMap.getOrDefault("dataAttachmentsInclude", new ArrayList<>());
 		this.dataAttachmentsExclude = (List<String>) dataMap.getOrDefault("dataAttachmentsExclude", new ArrayList<>());
@@ -172,15 +169,18 @@ public class ConfluenceDataFetcher implements Job {
 			try {
 				List<String> spacePermissions = new ArrayList<>();
 
-//				RemoteSpacePermissionSet remoteSpacePermissionSet = soapService.getSpacePermissionSet(soapToken, space.getKey(), "VIEWSPACE");
-//				RemoteContentPermission[] remoteContentPermissions = remoteSpacePermissionSet.getSpacePermissions();
-//
-//				for (RemoteContentPermission remoteContentPermission : remoteContentPermissions) {
-//					if (remoteContentPermission.getGroupName() != null) {
-//						spacePermissions.add(remoteContentPermission.getGroupName());
-//					}
-//				}
-//
+				ConfluenceSoapService soapService = (ConfluenceSoapService) dataMap.get("soapService");
+				String soapToken = dataMap.getString("soapToken");
+
+				RemoteSpacePermissionSet remoteSpacePermissionSet = soapService.getSpacePermissionSet(soapToken, space.getKey(), "VIEWSPACE");
+				RemoteContentPermission[] remoteContentPermissions = remoteSpacePermissionSet.getSpacePermissions();
+
+				for (RemoteContentPermission remoteContentPermission : remoteContentPermissions) {
+					if (remoteContentPermission.getGroupName() != null) {
+						spacePermissions.add(remoteContentPermission.getGroupName());
+					}
+				}
+
 				if (dataSpaceExclude != null && !dataSpaceExclude.isEmpty() && dataSpaceExclude.stream().anyMatch(x -> space.getName().toLowerCase().matches(x.toLowerCase()))) {
 					LOGGER.info("Excluding space {}", space.getName());
 					return;
@@ -373,16 +373,17 @@ public class ConfluenceDataFetcher implements Job {
 					}
 
 				}
-			}
 
-			size = size + batchSize.intValue();
-			pageRequest = new SimplePageRequest(size, batchSize.intValue());
-			pageResponse = remoteContentServiceImpl
-					.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
-					.withStatus(contentStatus)
-					.withSpace(space)
-					.fetchMany(contentType, pageRequest)
-					.claim();
+				size = size + batchSize.intValue();
+				pageRequest = new SimplePageRequest(size, batchSize.intValue());
+				pageResponse = remoteContentServiceImpl
+						.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
+						.withStatus(contentStatus)
+						.withSpace(space)
+						.fetchMany(contentType, pageRequest)
+						.claim();
+
+			}
 
 		} catch (Exception e) {
 			LOGGER.info("Failed to get {}", contentType.getValue(), e);
@@ -578,7 +579,7 @@ public class ConfluenceDataFetcher implements Job {
 			size = size + batchSize.intValue();
 			pageRequest = new SimplePageRequest(size, batchSize.intValue());
 
-			remoteSpaceFinder = remoteSpaceServiceImpl.find();
+			remoteSpaceFinder = remoteSpaceServiceImpl.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionPermissions);
 
 			if (!sites.isEmpty()) {
 				remoteSpaceFinder.withKeys(sites.toArray(new String[sites.size()]));
