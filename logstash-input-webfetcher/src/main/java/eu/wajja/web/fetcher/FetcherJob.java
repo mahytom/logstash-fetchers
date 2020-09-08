@@ -71,6 +71,7 @@ public class FetcherJob implements Job {
 	private String threadId;
 	private String crawlerUserAgent;
 	private String rootUrl;
+	private boolean reindex;
 	private ElasticSearchService elasticSearchService;
 
 	protected Map<String, Set<String>> disallowedLocations = new HashMap<>();
@@ -99,6 +100,7 @@ public class FetcherJob implements Job {
 		this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
 		this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
 		this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
+		this.reindex = dataMap.getBoolean(WebFetcher.PROPERTY_REINDEX);
 
 		String waitForCssSelector = dataMap.getString(WebFetcher.PROPERTY_WAIT_FOR_CSS_SELECTOR);
 		Long maxWaitForCssSelector = dataMap.getLong(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR);
@@ -147,11 +149,51 @@ public class FetcherJob implements Job {
 
 		initialUrls.stream().map(i -> getUrlString(i, i)).forEach(initialUrl -> {
 
-			LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
-
 			String id = Base64.getEncoder().encodeToString(initialUrl.getBytes());
 			String index = "logstash_web_fetcher_" + id.toLowerCase();
 			elasticSearchService.checkIndex(index);
+
+			if (reindex) {
+
+				LOGGER.info("Starting full reindex for thread : {}, url : {}", threadId, initialUrl);
+				Integer page = 0;
+
+				List<Result> results = elasticSearchService.getUrlsToReindex(index, page);
+
+				while (!results.isEmpty()) {
+
+					results.parallelStream().forEach(result -> {
+
+						LOGGER.info("Reindexing url {}", result.getUrl());
+
+						byte[] bytes = result.getContent();
+
+						Map<String, Object> metadata = new HashMap<>();
+						metadata.put(METADATA_URL, result.getUrl());
+						metadata.put(METADATA_INDEX, index);
+						metadata.put(METADATA_CONTENT_TYPE, result.getContentType());
+						metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
+						metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
+						metadata.put(METADATA_UUID, UUID.randomUUID().toString());
+						metadata.put(METADATA_STATUS, 200);
+						metadata.put(METADATA_CONTEXT, result.getRootUrl());
+						metadata.put(METADATA_COMMAND, Command.ADD.toString());
+						metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
+
+						consumer.accept(metadata);
+
+					});
+
+					page++;
+					results = elasticSearchService.getUrlsToReindex(index, page);
+				}
+				
+				
+				LOGGER.info("Finished full reindex for thread : {}, url : {}", threadId, initialUrl);
+
+			}
+
+			LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
 
 			// Read the robot.txt first
 

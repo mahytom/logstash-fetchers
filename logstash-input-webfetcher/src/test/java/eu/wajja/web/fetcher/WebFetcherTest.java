@@ -43,6 +43,7 @@ public class WebFetcherTest {
 		configValues.put(WebFetcher.CONFIG_DISABLE_SSL_CHECK.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_SSL_CHECK)));
 		configValues.put(WebFetcher.CONFIG_CHROME_DRIVERS.name(),  Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_CHROME_DRIVERS), String[].class)));
 		configValues.put(WebFetcher.CONFIG_ELASTIC_HOSTNAMES.name(),  Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES), String[].class)));
+		configValues.put(WebFetcher.CONFIG_REINDEX.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_REINDEX)));
 		
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);

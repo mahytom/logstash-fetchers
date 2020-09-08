@@ -60,7 +60,8 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR = "maxWaitForCssSelector";
 	protected static final String PROPERTY_READ_ROBOT = "readRobot";
 	protected static final String PROPERTY_ROOT_URL = "rootUrl";
-
+	protected static final String PROPERTY_REINDEX = "reindex";
+	
 	protected static final String PROPERTY_ELASTIC_HOSTNAMES = "elasticsearchHostnames";
 	protected static final String PROPERTY_ELASTIC_USERNAME = "elasticsearchUsername";
 	protected static final String PROPERTY_ELASTIC_PASSWORD = "elasticsearchPassword";
@@ -84,6 +85,7 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_USER_AGENT = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_USER_AGENT, "Wajja Crawler");
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_REFERER = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_REFERER, "http://wajja.eu/");
 	public static final PluginConfigSpec<Boolean> CONFIG_READ_ROBOT = PluginConfigSpec.booleanSetting(PROPERTY_READ_ROBOT, true);
+	public static final PluginConfigSpec<Boolean> CONFIG_REINDEX = PluginConfigSpec.booleanSetting(PROPERTY_REINDEX, false);
 	public static final PluginConfigSpec<String> CONFIG_ROOT_URL = PluginConfigSpec.stringSetting(PROPERTY_ROOT_URL, null, false, false);
 
 	public static final PluginConfigSpec<List<Object>> CONFIG_ELASTIC_HOSTNAMES = PluginConfigSpec.arraySetting(PROPERTY_ELASTIC_HOSTNAMES, new ArrayList<>(), false, false);
@@ -137,7 +139,8 @@ public class WebFetcher implements Input {
 
 		jobDataMap.put(PROPERTY_WAIT_FOR_CSS_SELECTOR, config.get(CONFIG_WAIT_FOR_CSS_SELECTOR));
 		jobDataMap.put(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, config.get(CONFIG_MAX_WAIT_FOR_CSS_SELECTOR));
-
+		jobDataMap.put(PROPERTY_REINDEX, config.get(CONFIG_REINDEX));
+		
 		this.threadId = id;
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.cron = config.get(CONFIG_CRON);
@@ -227,6 +230,7 @@ public class WebFetcher implements Input {
 				CONFIG_CHROME_DRIVERS,
 				CONFIG_WAIT_FOR_CSS_SELECTOR,
 				CONFIG_ROOT_URL,
+				CONFIG_REINDEX,
 				CONFIG_ELASTIC_HOSTNAMES,
 				CONFIG_ELASTIC_USERNAME,
 				CONFIG_ELASTIC_PASSWORD,
