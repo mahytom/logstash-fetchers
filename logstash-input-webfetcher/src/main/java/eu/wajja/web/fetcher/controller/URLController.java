@@ -48,7 +48,7 @@ public class URLController {
 		result.setUrl(currentUrl);
 		result.setRootUrl(initialUrl);
 		result.setCode(404);
-		
+
 		HttpURLConnection httpURLConnection = null;
 
 		try {
@@ -75,7 +75,7 @@ public class URLController {
 
 			result.setCode(code);
 			result.setMessage(message);
-			result.setContentType(httpURLConnection.getContentType());
+			result.setContentType(parseContentType(httpURLConnection.getContentType()));
 
 			if (code == HttpURLConnection.HTTP_OK) {
 
@@ -84,6 +84,7 @@ public class URLController {
 
 				if (length > 0 && elasticSearchService.existsInIndexWithSize(currentUrl, length, index)) {
 					result = elasticSearchService.getFromIndex(currentUrl, index);
+					result.setContentType(parseContentType(httpURLConnection.getContentType()));
 
 				} else {
 
@@ -142,6 +143,21 @@ public class URLController {
 		}
 
 		return result;
+	}
+
+	private String parseContentType(String contentType) {
+
+		if (contentType == null || contentType.isEmpty()) {
+			return "application/octet-stream";
+		}
+
+		if (contentType.contains(";")) {
+			contentType = contentType.substring(0, contentType.indexOf(';'));
+		}
+
+		contentType = contentType.replace("\"", "");
+
+		return contentType.trim().toLowerCase();
 	}
 
 	private byte[] downloadContent(String currentUrl) {

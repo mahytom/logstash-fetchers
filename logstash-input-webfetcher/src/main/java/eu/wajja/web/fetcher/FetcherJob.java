@@ -149,7 +149,7 @@ public class FetcherJob implements Job {
 
 		initialUrls.stream().map(i -> getUrlString(i, i)).forEach(initialUrl -> {
 
-			String id = Base64.getEncoder().encodeToString(initialUrl.getBytes());
+			String id = Base64.getEncoder().encodeToString(initialUrl.getBytes()).replace("/", "_");
 			String index = "logstash_web_fetcher_" + id.toLowerCase();
 			elasticSearchService.checkIndex(index);
 
@@ -187,8 +187,7 @@ public class FetcherJob implements Job {
 					page++;
 					results = elasticSearchService.getUrlsToReindex(index, page);
 				}
-				
-				
+
 				LOGGER.info("Finished full reindex for thread : {}, url : {}", threadId, initialUrl);
 
 			}
