@@ -61,6 +61,7 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_READ_ROBOT = "readRobot";
 	protected static final String PROPERTY_ROOT_URL = "rootUrl";
 	protected static final String PROPERTY_REINDEX = "reindex";
+	protected static final String PROPERTY_ENABLE_CRAWL = "enableCrawl";
 	
 	protected static final String PROPERTY_ELASTIC_HOSTNAMES = "elasticsearchHostnames";
 	protected static final String PROPERTY_ELASTIC_USERNAME = "elasticsearchUsername";
@@ -91,7 +92,8 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<List<Object>> CONFIG_ELASTIC_HOSTNAMES = PluginConfigSpec.arraySetting(PROPERTY_ELASTIC_HOSTNAMES, new ArrayList<>(), false, false);
 	public static final PluginConfigSpec<String> CONFIG_ELASTIC_USERNAME = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_USERNAME, null, false, false);
 	public static final PluginConfigSpec<String> CONFIG_ELASTIC_PASSWORD = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_PASSWORD, null, false, false);
-
+	public static final PluginConfigSpec<Boolean> CONFIG_ENABLE_CRAWL = PluginConfigSpec.booleanSetting(PROPERTY_ENABLE_CRAWL, true, false, false);
+	
 	public static final PluginConfigSpec<String> CONFIG_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.stringSetting(PROPERTY_WAIT_FOR_CSS_SELECTOR);
 	public static final PluginConfigSpec<Long> CONFIG_MAX_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.numSetting(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, 30);
 
@@ -140,6 +142,7 @@ public class WebFetcher implements Input {
 		jobDataMap.put(PROPERTY_WAIT_FOR_CSS_SELECTOR, config.get(CONFIG_WAIT_FOR_CSS_SELECTOR));
 		jobDataMap.put(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, config.get(CONFIG_MAX_WAIT_FOR_CSS_SELECTOR));
 		jobDataMap.put(PROPERTY_REINDEX, config.get(CONFIG_REINDEX));
+		jobDataMap.put(PROPERTY_ENABLE_CRAWL, config.get(CONFIG_ENABLE_CRAWL));
 		
 		this.threadId = id;
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
@@ -234,6 +237,7 @@ public class WebFetcher implements Input {
 				CONFIG_ELASTIC_HOSTNAMES,
 				CONFIG_ELASTIC_USERNAME,
 				CONFIG_ELASTIC_PASSWORD,
+				CONFIG_ENABLE_CRAWL,
 				CONFIG_MAX_WAIT_FOR_CSS_SELECTOR);
 	}
 

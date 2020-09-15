@@ -117,6 +117,7 @@ public class FetcherJob implements Job {
 		List<String> hostnames = (List<String>) dataMap.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES);
 		String username = dataMap.getString(WebFetcher.PROPERTY_ELASTIC_USERNAME);
 		String password = dataMap.getString(WebFetcher.PROPERTY_ELASTIC_PASSWORD);
+		boolean enableCrawl = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_CRAWL);
 		String proxyScheme = proxyController.getProxyHost();
 		String proxyHostname = proxyController.getProxyHost();
 		Long proxyPort = proxyController.getProxyPort();
@@ -192,79 +193,83 @@ public class FetcherJob implements Job {
 
 			}
 
-			LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
+			if (enableCrawl) {
+				
+				LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
 
-			// Read the robot.txt first
+				// Read the robot.txt first
 
-			if (readRobot) {
+				if (readRobot) {
 
-				LOGGER.info("Reading Robot : {}, url : {}", threadId, initialUrl);
+					LOGGER.info("Reading Robot : {}, url : {}", threadId, initialUrl);
 
-				Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
-				Matcher m = p.matcher(initialUrl);
+					Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
+					Matcher m = p.matcher(initialUrl);
 
-				if (m.find()) {
-					String robotUrl = m.group(0) + ROBOTS;
-					readRobot(index, initialUrl, robotUrl, chromeThreads.get(0));
+					if (m.find()) {
+						String robotUrl = m.group(0) + ROBOTS;
+						readRobot(index, initialUrl, robotUrl, chromeThreads.get(0));
 
-				} else {
-					LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
-				}
-
-				LOGGER.info("Finished Reading Robot : {}, url : {}", threadId, initialUrl);
-
-			}
-
-			Integer randomValue = random.nextInt(chromeThreads.size());
-
-			LOGGER.info("Adding url {}", initialUrl);
-			extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(randomValue), index);
-
-			List<Result> results = elasticSearchService.getUrlsToProcess(jobId, index);
-
-			while (!results.isEmpty()) {
-
-				int threadCounter = 0;
-
-				for (int y = 0; results.size() > y; y++) {
-
-					Result result = results.get(y);
-					String driver = chromeThreads.get(threadCounter);
-					threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, result.getUrl(), result.getRootUrl(), driver, index));
-
-					if ((chromeThreads.size() - 1) == threadCounter) {
-						threadCounter = 0;
 					} else {
-						threadCounter++;
+						LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
 					}
+
+					LOGGER.info("Finished Reading Robot : {}, url : {}", threadId, initialUrl);
 
 				}
 
-				for (int x = 0; x < threadPoolExecutors.length; x++) {
+				Integer randomValue = random.nextInt(chromeThreads.size());
 
-					int y = 0;
+				LOGGER.info("Adding url {}", initialUrl);
+				extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(randomValue), index);
 
-					while (threadPoolExecutors[x].getActiveCount() > 0) {
+				List<Result> results = elasticSearchService.getUrlsToProcess(jobId, index);
 
-						y++;
+				while (!results.isEmpty()) {
 
-						try {
-							Thread.sleep(1000);
-						} catch (InterruptedException e) {
-							LOGGER.error("Failed to sleep in thread", e);
-							Thread.currentThread().interrupt();
+					int threadCounter = 0;
+
+					for (int y = 0; results.size() > y; y++) {
+
+						Result result = results.get(y);
+						String driver = chromeThreads.get(threadCounter);
+						threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, result.getUrl(), result.getRootUrl(), driver, index));
+
+						if ((chromeThreads.size() - 1) == threadCounter) {
+							threadCounter = 0;
+						} else {
+							threadCounter++;
 						}
 
-						if (y > 300) {
-							LOGGER.info("Waiting for site {} to be finished, active threads left {}", initialUrl, threadPoolExecutors[x].getActiveCount());
+					}
+
+					for (int x = 0; x < threadPoolExecutors.length; x++) {
+
+						int y = 0;
+
+						while (threadPoolExecutors[x].getActiveCount() > 0) {
+
+							y++;
+
+							try {
+								Thread.sleep(1000);
+							} catch (InterruptedException e) {
+								LOGGER.error("Failed to sleep in thread", e);
+								Thread.currentThread().interrupt();
+							}
+
+							if (y > 300) {
+								LOGGER.info("Waiting for site {} to be finished, active threads left {}", initialUrl, threadPoolExecutors[x].getActiveCount());
+							}
 						}
 					}
+
+					results = elasticSearchService.getUrlsToProcess(jobId, index);
 				}
 
-				results = elasticSearchService.getUrlsToProcess(jobId, index);
+				deleteOldDocuments(consumer, index);
 			}
 
-			deleteOldDocuments(consumer, index);
 		});
 
 		LOGGER.info("Finished Thread {}", threadId);
@@ -399,7 +404,8 @@ public class FetcherJob implements Job {
 				if (result.getCode() == 200 && result.getContent().length > 0) {
 
 					LOGGER.info("Sending url {}", result.getUrl());
-
+					elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_PROCESSED, "sent to API");
+					
 					Map<String, Object> metadata = new HashMap<>();
 					metadata.put(METADATA_URL, result.getUrl());
 					metadata.put(METADATA_INDEX, index);
@@ -413,7 +419,6 @@ public class FetcherJob implements Job {
 					metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
 
 					consumer.accept(metadata);
-					elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_PROCESSED, "sent to API");
 
 				} else {
 
