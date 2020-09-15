@@ -175,6 +175,33 @@ public class ElasticSearchService {
 		}
 	}
 
+	public void addNewUrl(String url, String jobId, String index, String status, String message) throws IOException {
+
+		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
+
+		IndexRequest indexRequest = new IndexRequest(index);
+		indexRequest.id(id);
+		indexRequest.type(DOCUMENT_TYPE);
+
+		try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
+
+			contentBuilder.startObject();
+
+			contentBuilder.field(MODIFIED_DATE, new Date().getTime());
+			contentBuilder.field(STATUS, status);
+			contentBuilder.field(JOB_ID, jobId);
+			contentBuilder.field(REASON, message);
+			contentBuilder.endObject();
+
+			indexRequest.source(contentBuilder);
+
+			restHighLevelClient.index(indexRequest, RequestOptions.DEFAULT);
+
+		} catch (IOException e) {
+			LOGGER.error("Failed to addNewUrl to index", e);
+		}
+	}
+
 	public List<Result> getUrlsToReindex(String index, Integer page) {
 
 		List<Result> urls = new ArrayList<>();
@@ -187,6 +214,66 @@ public class ElasticSearchService {
 
 			BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
 			booleanQuery.must().add(QueryBuilders.termQuery(STATUS, STATUS_PROCESSED));
+
+			sourceBuilder.query(booleanQuery);
+			searchRequest.source(sourceBuilder);
+
+			SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+
+			for (SearchHit searchHit : searchResponse.getHits().getHits()) {
+
+				Map<String, Object> source = searchHit.getSourceAsMap();
+
+				Result result = new Result();
+
+				result.setRootUrl((String) source.get(ROOT_URL));
+				result.setUrl((String) source.get(URL));
+				result.setContentType((String) source.get(CONTENT_TYPE));
+
+				if (result.getContentType() != null) {
+
+					String contentTmp = (String) source.get(CONTENT);
+
+					if (contentTmp != null) {
+
+						if (result.getContentType().contains("html")) {
+							result.setContent(contentTmp.getBytes());
+						} else {
+							byte[] content = Base64.getDecoder().decode(contentTmp.getBytes());
+							result.setContent(content);
+						}
+					}
+
+					result.setCode((Integer) source.get(CODE));
+					result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
+					result.setLength((Integer) source.get(CONTENT_SIZE));
+					result.setMessage((String) source.get(MESSAGE));
+					result.setRootUrl((String) source.get(ROOT_URL));
+					result.setUrl((String) source.get(URL));
+				}
+
+				urls.add(result);
+			}
+
+		} catch (IOException e1) {
+			LOGGER.error("Failed to find all pages to reindex", e1);
+		}
+
+		return urls;
+	}
+
+	public List<Result> getUrlsToProcess(String index, Integer page) {
+
+		List<Result> urls = new ArrayList<>();
+
+		try {
+			SearchRequest searchRequest = new SearchRequest(index);
+			SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+			sourceBuilder.size(10);
+			sourceBuilder.from(page * 10);
+
+			BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
+			booleanQuery.must().add(QueryBuilders.termQuery(STATUS, STATUS_QUEUE));
 
 			sourceBuilder.query(booleanQuery);
 			searchRequest.source(sourceBuilder);

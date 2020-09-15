@@ -194,86 +194,152 @@ public class FetcherJob implements Job {
 			}
 
 			if (enableCrawl) {
-				
-				LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
 
 				// Read the robot.txt first
+				checkRobot(chromeThreads, readRobot, initialUrl, index);
 
-				if (readRobot) {
+				// Check items that are still queued from last time
+				checkQueuedItems(consumer, initialUrl, index, chromeThreads);
 
-					LOGGER.info("Reading Robot : {}, url : {}", threadId, initialUrl);
+				// Start the actual fetch
+				fetchNewItems(consumer, chromeThreads, initialUrl, index);
 
-					Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
-					Matcher m = p.matcher(initialUrl);
-
-					if (m.find()) {
-						String robotUrl = m.group(0) + ROBOTS;
-						readRobot(index, initialUrl, robotUrl, chromeThreads.get(0));
-
-					} else {
-						LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
-					}
-
-					LOGGER.info("Finished Reading Robot : {}, url : {}", threadId, initialUrl);
-
-				}
-
-				Integer randomValue = random.nextInt(chromeThreads.size());
-
-				LOGGER.info("Adding url {}", initialUrl);
-				extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(randomValue), index);
-
-				List<Result> results = elasticSearchService.getUrlsToProcess(jobId, index);
-
-				while (!results.isEmpty()) {
-
-					int threadCounter = 0;
-
-					for (int y = 0; results.size() > y; y++) {
-
-						Result result = results.get(y);
-						String driver = chromeThreads.get(threadCounter);
-						threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, result.getUrl(), result.getRootUrl(), driver, index));
-
-						if ((chromeThreads.size() - 1) == threadCounter) {
-							threadCounter = 0;
-						} else {
-							threadCounter++;
-						}
-
-					}
-
-					for (int x = 0; x < threadPoolExecutors.length; x++) {
-
-						int y = 0;
-
-						while (threadPoolExecutors[x].getActiveCount() > 0) {
-
-							y++;
-
-							try {
-								Thread.sleep(1000);
-							} catch (InterruptedException e) {
-								LOGGER.error("Failed to sleep in thread", e);
-								Thread.currentThread().interrupt();
-							}
-
-							if (y > 300) {
-								LOGGER.info("Waiting for site {} to be finished, active threads left {}", initialUrl, threadPoolExecutors[x].getActiveCount());
-							}
-						}
-					}
-
-					results = elasticSearchService.getUrlsToProcess(jobId, index);
-				}
-
-				deleteOldDocuments(consumer, index);
+				// Deleting all the old items
+				deleteOldItems(consumer, index);
 			}
 
 		});
 
 		LOGGER.info("Finished Thread {}", threadId);
 
+	}
+
+	private void fetchNewItems(Consumer<Map<String, Object>> consumer, List<String> chromeThreads, String initialUrl, String index) {
+		
+		LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
+		Integer randomValue = random.nextInt(chromeThreads.size());
+
+		LOGGER.info("Adding url {}", initialUrl);
+		extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(randomValue), index, true);
+
+		List<Result> results = elasticSearchService.getUrlsToProcess(jobId, index);
+
+		while (!results.isEmpty()) {
+
+			int threadCounter = 0;
+
+			for (int y = 0; results.size() > y; y++) {
+
+				Result result = results.get(y);
+				String driver = chromeThreads.get(threadCounter);
+				threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, result.getUrl(), result.getRootUrl(), driver, index, true));
+
+				if ((chromeThreads.size() - 1) == threadCounter) {
+					threadCounter = 0;
+				} else {
+					threadCounter++;
+				}
+
+			}
+
+			for (int x = 0; x < threadPoolExecutors.length; x++) {
+
+				int y = 0;
+
+				while (threadPoolExecutors[x].getActiveCount() > 0) {
+
+					y++;
+
+					try {
+						Thread.sleep(1000);
+					} catch (InterruptedException e) {
+						LOGGER.error("Failed to sleep in thread", e);
+						Thread.currentThread().interrupt();
+					}
+
+					if (y > 300) {
+						LOGGER.info("Waiting for site {} to be finished, active threads left {}", initialUrl, threadPoolExecutors[x].getActiveCount());
+					}
+				}
+			}
+
+			results = elasticSearchService.getUrlsToProcess(jobId, index);
+		}
+	}
+
+	private void checkRobot(List<String> chromeThreads, boolean readRobot, String initialUrl, String index) {
+
+		if (readRobot) {
+
+			LOGGER.info("Reading Robot : {}, url : {}", threadId, initialUrl);
+
+			Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
+			Matcher m = p.matcher(initialUrl);
+
+			if (m.find()) {
+				String robotUrl = m.group(0) + ROBOTS;
+				readRobot(index, initialUrl, robotUrl, chromeThreads.get(0));
+
+			} else {
+				LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
+			}
+
+			LOGGER.info("Finished Reading Robot : {}, url : {}", threadId, initialUrl);
+
+		}
+	}
+
+	private void checkQueuedItems(Consumer<Map<String, Object>> consumer, String initialUrl, String index, List<String> chromeThreads) {
+
+		LOGGER.info("Checking all the urls that are still queued : {}, url : {}", threadId, initialUrl);
+
+		Integer page = 0;
+		List<Result> results = elasticSearchService.getUrlsToProcess(index, page);
+
+		while (!results.isEmpty()) {
+
+			int threadCounter = 0;
+
+			for (int y = 0; results.size() > y; y++) {
+
+				Result result = results.get(y);
+				String driver = chromeThreads.get(threadCounter);
+				threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, result.getUrl(), result.getRootUrl(), driver, index, true));
+
+				if ((chromeThreads.size() - 1) == threadCounter) {
+					threadCounter = 0;
+				} else {
+					threadCounter++;
+				}
+
+			}
+
+			for (int x = 0; x < threadPoolExecutors.length; x++) {
+
+				int y = 0;
+
+				while (threadPoolExecutors[x].getActiveCount() > 0) {
+
+					y++;
+
+					try {
+						Thread.sleep(1000);
+					} catch (InterruptedException e) {
+						LOGGER.error("Failed to sleep in thread", e);
+						Thread.currentThread().interrupt();
+					}
+
+					if (y > 300) {
+						LOGGER.info("Waiting for site {} to be finished, active threads left {}", initialUrl, threadPoolExecutors[x].getActiveCount());
+					}
+				}
+			}
+
+			page++;
+			results = elasticSearchService.getUrlsToProcess(index, page);
+		}
+
+		LOGGER.info("Finished parsing all queued items for thread : {}, url : {}", threadId, initialUrl);
 	}
 
 	private void readRobot(String index, String initialUrl, String robotUrl, String chromeDriver) {
@@ -338,7 +404,7 @@ public class FetcherJob implements Job {
 		}
 	}
 
-	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, String chromeDriver, String index) {
+	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, String chromeDriver, String index, Boolean checkChildren) {
 
 		String rootUrlTmp = (this.rootUrl != null) ? this.rootUrl : rootUrl;
 		String urlString = getUrlString(urlStringTmp, rootUrlTmp);
@@ -367,6 +433,7 @@ public class FetcherJob implements Job {
 
 					if (m.find()) {
 						LOGGER.info("URL {} is dissallowed", urlStringTmp);
+						elasticSearchService.addNewUrl(urlString, jobId, index, ElasticSearchService.STATUS_FAILED, "excluded by robot");
 						return;
 					}
 				}
@@ -374,14 +441,15 @@ public class FetcherJob implements Job {
 				Result result = urlController.getURL(index, urlString, rootUrlTmp, chromeDriver);
 
 				if (result != null && result.getContent() != null) {
-					extractContent(consumer, result, index);
+					extractContent(consumer, result, index, true);
 
 				} else {
 					elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_FAILED, "content is empty");
-					elasticSearchService.flushIndex(index);
-
 					LOGGER.info("URL {} is does not have content", urlStringTmp);
 				}
+
+			} else {
+				elasticSearchService.addNewUrl(urlString, jobId, index, ElasticSearchService.STATUS_FAILED, "too many fetched pages");
 			}
 
 		} catch (Exception e) {
@@ -390,7 +458,7 @@ public class FetcherJob implements Job {
 
 	}
 
-	private void extractContent(Consumer<Map<String, Object>> consumer, Result result, String index) throws IOException {
+	private void extractContent(Consumer<Map<String, Object>> consumer, Result result, String index, Boolean checkChildren) throws IOException {
 
 		byte[] bytes = result.getContent();
 		Map<String, List<String>> headers = result.getHeaders();
@@ -405,7 +473,7 @@ public class FetcherJob implements Job {
 
 					LOGGER.info("Sending url {}", result.getUrl());
 					elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_PROCESSED, "sent to API");
-					
+
 					Map<String, Object> metadata = new HashMap<>();
 					metadata.put(METADATA_URL, result.getUrl());
 					metadata.put(METADATA_INDEX, index);
@@ -439,25 +507,28 @@ public class FetcherJob implements Job {
 
 		elasticSearchService.flushIndex(index);
 
-		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
+		if (checkChildren) {
 
-			String bodyHtml = IOUtils.toString(bytes, StandardCharsets.UTF_8.name());
-			org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
-			Elements elements = document.getElementsByAttribute("href");
+			if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
 
-			String simpleUrlString = result.getRootUrl().replace(HTTP, "").replace(HTTPS, "");
+				String bodyHtml = IOUtils.toString(bytes, StandardCharsets.UTF_8.name());
+				org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
+				Elements elements = document.getElementsByAttribute("href");
 
-			Set<String> includedChildPages = elements.stream().map(e -> e.attr("href"))
-					.filter(href -> !href.equals("/") && !href.startsWith("//"))
-					.map(url -> getUrlString(url, result.getRootUrl()))
-					.filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
-					.filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
-					.filter(href -> !excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
-					.sorted()
-					.collect(Collectors.toSet());
+				String simpleUrlString = result.getRootUrl().replace(HTTP, "").replace(HTTPS, "");
 
-			includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, result.getRootUrl(), jobId, index));
-			elasticSearchService.flushIndex(index);
+				Set<String> includedChildPages = elements.stream().map(e -> e.attr("href"))
+						.filter(href -> !href.equals("/") && !href.startsWith("//"))
+						.map(url -> getUrlString(url, result.getRootUrl()))
+						.filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
+						.filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
+						.filter(href -> !excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
+						.sorted()
+						.collect(Collectors.toSet());
+
+				includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, result.getRootUrl(), jobId, index));
+				elasticSearchService.flushIndex(index);
+			}
 		}
 
 	}
@@ -512,7 +583,7 @@ public class FetcherJob implements Job {
 		return urlString;
 	}
 
-	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String index) {
+	private void deleteOldItems(Consumer<Map<String, Object>> consumer, String index) {
 
 		List<Result> results = elasticSearchService.getUrlsToDelete(jobId, index);
 
