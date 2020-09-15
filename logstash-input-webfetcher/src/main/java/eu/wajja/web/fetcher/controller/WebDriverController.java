@@ -24,7 +24,7 @@ public class WebDriverController {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(WebDriverController.class);
 
-	public Result getURL(Result result, String chromeDriver, String waitForCssSelector, Integer maxWaitForCssSelector) throws MalformedURLException, WebDriverException {
+	public byte[] getURL(String url, String chromeDriver, String waitForCssSelector, Integer maxWaitForCssSelector) throws MalformedURLException, WebDriverException {
 
 		WebDriver webDriver = null;
 
@@ -66,7 +66,7 @@ public class WebDriverController {
 
 		try {
 
-			webDriver.get(result.getUrl());
+			webDriver.get(url);
 
 			if (waitForCssSelector != null) {
 
@@ -77,10 +77,10 @@ public class WebDriverController {
 
 					Thread.sleep(1000);
 					webElement = webDriver.findElements(By.cssSelector(waitForCssSelector));
-					LOGGER.info("Waiting for css selector {} to appear on page {}", waitForCssSelector, result.getUrl());
+					LOGGER.info("Waiting for css selector {} to appear on page {}", waitForCssSelector, url);
 
 					if (x > maxWaitForCssSelector) {
-						LOGGER.info("Could not find css selector {} on page {}", waitForCssSelector, result.getUrl());
+						LOGGER.info("Could not find css selector {} on page {}", waitForCssSelector, url);
 						break;
 					}
 
@@ -93,18 +93,18 @@ public class WebDriverController {
 			String content = webDriver.getPageSource();
 
 			if (content == null || content.isEmpty()) {
-				LOGGER.error("Current url {} is empty or null", result.getUrl());
+				LOGGER.error("Current url {} is empty or null", url);
 			} else {
-				result.setContent(content.getBytes());
+				return content.getBytes();
 			}
 
 		} catch (Exception e) {
-			LOGGER.error("Failed to retrieve page {}", result.getUrl());
+			LOGGER.error("Failed to retrieve page {}", url);
 		} finally {
 			webDriver.close();
 		}
 
-		return result;
+		return null;
 	}
 
 }

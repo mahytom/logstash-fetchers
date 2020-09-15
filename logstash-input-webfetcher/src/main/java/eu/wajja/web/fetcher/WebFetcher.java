@@ -41,7 +41,6 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_URLS = "urls";
 	protected static final String PROPERTY_EXCLUDE_DATA = "excludeData";
 	protected static final String PROPERTY_EXCLUDE_LINK = "excludeLink";
-	protected static final String PROPERTY_DATAFOLDER = "dataFolder";
 	protected static final String PROPERTY_TIMEOUT = "timeout";
 	protected static final String PROPERTY_MAX_DEPTH = "maxdepth";
 	protected static final String PROPERTY_MAX_PAGES = "maxpages";
@@ -61,13 +60,18 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR = "maxWaitForCssSelector";
 	protected static final String PROPERTY_READ_ROBOT = "readRobot";
 	protected static final String PROPERTY_ROOT_URL = "rootUrl";
+	protected static final String PROPERTY_REINDEX = "reindex";
+	protected static final String PROPERTY_ENABLE_CRAWL = "enableCrawl";
 	
+	protected static final String PROPERTY_ELASTIC_HOSTNAMES = "elasticsearchHostnames";
+	protected static final String PROPERTY_ELASTIC_USERNAME = "elasticsearchUsername";
+	protected static final String PROPERTY_ELASTIC_PASSWORD = "elasticsearchPassword";
+
 	public static final String GROUP_NAME = "group001";
 
 	public static final PluginConfigSpec<List<Object>> CONFIG_URLS = PluginConfigSpec.arraySetting(PROPERTY_URLS);
 	public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE_DATA = PluginConfigSpec.arraySetting(PROPERTY_EXCLUDE_DATA, new ArrayList<>(), false, false);
 	public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE_LINK = PluginConfigSpec.arraySetting(PROPERTY_EXCLUDE_LINK, new ArrayList<>(), false, false);
-	public static final PluginConfigSpec<String> CONFIG_DATA_FOLDER = PluginConfigSpec.stringSetting(PROPERTY_DATAFOLDER);
 	public static final PluginConfigSpec<Long> CONFIG_TIMEOUT = PluginConfigSpec.numSetting(PROPERTY_TIMEOUT, 8000);
 	public static final PluginConfigSpec<Long> CONFIG_MAX_DEPTH = PluginConfigSpec.numSetting(PROPERTY_MAX_DEPTH, 0);
 	public static final PluginConfigSpec<Long> CONFIG_MAX_PAGES = PluginConfigSpec.numSetting(PROPERTY_MAX_PAGES, 1000);
@@ -82,7 +86,13 @@ public class WebFetcher implements Input {
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_USER_AGENT = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_USER_AGENT, "Wajja Crawler");
 	public static final PluginConfigSpec<String> CONFIG_CRAWLER_REFERER = PluginConfigSpec.stringSetting(PROPERTY_CRAWLER_REFERER, "http://wajja.eu/");
 	public static final PluginConfigSpec<Boolean> CONFIG_READ_ROBOT = PluginConfigSpec.booleanSetting(PROPERTY_READ_ROBOT, true);
+	public static final PluginConfigSpec<Boolean> CONFIG_REINDEX = PluginConfigSpec.booleanSetting(PROPERTY_REINDEX, false);
 	public static final PluginConfigSpec<String> CONFIG_ROOT_URL = PluginConfigSpec.stringSetting(PROPERTY_ROOT_URL, null, false, false);
+
+	public static final PluginConfigSpec<List<Object>> CONFIG_ELASTIC_HOSTNAMES = PluginConfigSpec.arraySetting(PROPERTY_ELASTIC_HOSTNAMES, new ArrayList<>(), false, false);
+	public static final PluginConfigSpec<String> CONFIG_ELASTIC_USERNAME = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_USERNAME, null, false, false);
+	public static final PluginConfigSpec<String> CONFIG_ELASTIC_PASSWORD = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_PASSWORD, null, false, false);
+	public static final PluginConfigSpec<Boolean> CONFIG_ENABLE_CRAWL = PluginConfigSpec.booleanSetting(PROPERTY_ENABLE_CRAWL, true, false, false);
 	
 	public static final PluginConfigSpec<String> CONFIG_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.stringSetting(PROPERTY_WAIT_FOR_CSS_SELECTOR);
 	public static final PluginConfigSpec<Long> CONFIG_MAX_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.numSetting(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, 30);
@@ -109,7 +119,6 @@ public class WebFetcher implements Input {
 			LOGGER.debug(context.toString());
 		}
 
-		jobDataMap.put(PROPERTY_DATAFOLDER, config.get(CONFIG_DATA_FOLDER));
 		jobDataMap.put(PROPERTY_EXCLUDE_DATA, config.get(CONFIG_EXCLUDE_DATA).stream().map(url -> (String) url).collect(Collectors.toList()));
 		jobDataMap.put(PROPERTY_EXCLUDE_LINK, config.get(CONFIG_EXCLUDE_LINK).stream().map(url -> (String) url).collect(Collectors.toList()));
 		jobDataMap.put(PROPERTY_MAX_DEPTH, config.get(CONFIG_MAX_DEPTH));
@@ -120,15 +129,21 @@ public class WebFetcher implements Input {
 		jobDataMap.put(PROPERTY_CRAWLER_USER_AGENT, config.get(CONFIG_CRAWLER_USER_AGENT));
 		jobDataMap.put(PROPERTY_READ_ROBOT, config.get(CONFIG_READ_ROBOT));
 		jobDataMap.put(PROPERTY_ROOT_URL, config.get(CONFIG_ROOT_URL));
-		
+
 		jobDataMap.put(PROPERTY_PROXY_HOST, config.get(CONFIG_PROXY_HOST));
 		jobDataMap.put(PROPERTY_PROXY_PORT, config.get(CONFIG_PROXY_PORT));
 		jobDataMap.put(PROPERTY_PROXY_USER, config.get(CONFIG_PROXY_USER));
 		jobDataMap.put(PROPERTY_PROXY_PASS, config.get(CONFIG_PROXY_PASS));
 
+		jobDataMap.put(PROPERTY_ELASTIC_HOSTNAMES, config.get(CONFIG_ELASTIC_HOSTNAMES).stream().map(url -> (String) url).collect(Collectors.toList()));
+		jobDataMap.put(PROPERTY_ELASTIC_USERNAME, config.get(CONFIG_ELASTIC_USERNAME));
+		jobDataMap.put(PROPERTY_ELASTIC_PASSWORD, config.get(CONFIG_ELASTIC_PASSWORD));
+
 		jobDataMap.put(PROPERTY_WAIT_FOR_CSS_SELECTOR, config.get(CONFIG_WAIT_FOR_CSS_SELECTOR));
 		jobDataMap.put(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, config.get(CONFIG_MAX_WAIT_FOR_CSS_SELECTOR));
-
+		jobDataMap.put(PROPERTY_REINDEX, config.get(CONFIG_REINDEX));
+		jobDataMap.put(PROPERTY_ENABLE_CRAWL, config.get(CONFIG_ENABLE_CRAWL));
+		
 		this.threadId = id;
 		this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
 		this.cron = config.get(CONFIG_CRON);
@@ -200,7 +215,6 @@ public class WebFetcher implements Input {
 	@Override
 	public Collection<PluginConfigSpec<?>> configSchema() {
 		return Arrays.asList(CONFIG_URLS,
-				CONFIG_DATA_FOLDER,
 				CONFIG_DISABLE_SSL_CHECK,
 				CONFIG_EXCLUDE_DATA,
 				CONFIG_EXCLUDE_LINK,
@@ -219,6 +233,11 @@ public class WebFetcher implements Input {
 				CONFIG_CHROME_DRIVERS,
 				CONFIG_WAIT_FOR_CSS_SELECTOR,
 				CONFIG_ROOT_URL,
+				CONFIG_REINDEX,
+				CONFIG_ELASTIC_HOSTNAMES,
+				CONFIG_ELASTIC_USERNAME,
+				CONFIG_ELASTIC_PASSWORD,
+				CONFIG_ENABLE_CRAWL,
 				CONFIG_MAX_WAIT_FOR_CSS_SELECTOR);
 	}
 

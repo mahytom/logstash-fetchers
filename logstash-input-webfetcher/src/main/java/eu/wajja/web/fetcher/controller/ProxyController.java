@@ -23,8 +23,19 @@ public class ProxyController {
 	private static final Logger LOGGER = LoggerFactory.getLogger(ProxyController.class);
 
 	private Proxy proxy = null;
+	private String proxyUser;
+	private String proxyPass;
+	private String proxyHost;
+	private Long proxyPort;
+	private Boolean disableSSLcheck;
 
 	public ProxyController(String proxyUser, String proxyPass, String proxyHost, Long proxyPort, Boolean disableSSLcheck) {
+
+		this.proxyUser = proxyUser;
+		this.proxyPass = proxyPass;
+		this.proxyHost = proxyHost;
+		this.proxyPort = proxyPort;
+		this.disableSSLcheck = disableSSLcheck;
 
 		if (proxyUser != null && proxyPass != null) {
 
@@ -84,6 +95,50 @@ public class ProxyController {
 
 	public Proxy getProxy() {
 		return proxy;
+	}
+
+	public String getProxyUser() {
+		return proxyUser;
+	}
+
+	public void setProxyUser(String proxyUser) {
+		this.proxyUser = proxyUser;
+	}
+
+	public String getProxyPass() {
+		return proxyPass;
+	}
+
+	public void setProxyPass(String proxyPass) {
+		this.proxyPass = proxyPass;
+	}
+
+	public String getProxyHost() {
+		return proxyHost;
+	}
+
+	public void setProxyHost(String proxyHost) {
+		this.proxyHost = proxyHost;
+	}
+
+	public Long getProxyPort() {
+		return proxyPort;
+	}
+
+	public void setProxyPort(Long proxyPort) {
+		this.proxyPort = proxyPort;
+	}
+
+	public Boolean getDisableSSLcheck() {
+		return disableSSLcheck;
+	}
+
+	public void setDisableSSLcheck(Boolean disableSSLcheck) {
+		this.disableSSLcheck = disableSSLcheck;
+	}
+
+	public void setProxy(Proxy proxy) {
+		this.proxy = proxy;
 	}
 
 }

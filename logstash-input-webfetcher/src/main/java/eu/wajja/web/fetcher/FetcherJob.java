@@ -4,13 +4,8 @@ import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -27,7 +22,6 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.jsoup.Jsoup;
@@ -40,10 +34,9 @@ import org.quartz.JobExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-
 import eu.wajja.web.fetcher.controller.ProxyController;
 import eu.wajja.web.fetcher.controller.URLController;
+import eu.wajja.web.fetcher.elasticsearch.ElasticSearchService;
 import eu.wajja.web.fetcher.enums.Command;
 import eu.wajja.web.fetcher.model.Result;
 
@@ -52,48 +45,34 @@ public class FetcherJob implements Job {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(FetcherJob.class);
 
+	private static final String METADATA_URL = "url";
+	private static final String METADATA_INDEX = "index";
+	private static final String METADATA_CONTENT_TYPE = "type";
+
 	private static final String METADATA_EPOCH = "epochSecond";
 	private static final String METADATA_REFERENCE = "reference";
 	private static final String METADATA_CONTENT = "content";
-	private static final String METADATA_URL = "url";
 	private static final String METADATA_CONTEXT = "context";
 	private static final String METADATA_UUID = "uuid";
 	private static final String METADATA_STATUS = "status";
-	private static final String METADATA_CHILD = "childPages";
 	private static final String METADATA_COMMAND = "command";
-
-	private static final String LOGGER_THREAD = "thread";
-	private static final String LOGGER_FIREID = "fireId";
-	private static final String LOGGER_REFERENCE = "reference";
-	private static final String LOGGER_STATUS = "status";
-	private static final String LOGGER_PAGES = "pages";
-	private static final String LOGGER_DEPTH = "depth";
-	private static final String LOGGER_URL = "url";
-	private static final String LOGGER_MESSAGE = "message";
-	private static final String LOGGER_ROOT_URL = "rootUrl";
-	private static final String LOGGER_SIZE = "size";
-	private static final String LOGGER_ACTION = "action";
 
 	private static final String HTTP = "http://";
 	private static final String HTTPS = "https://";
 	private static final String ROBOTS = "robots.txt";
 
-	private ObjectMapper objectMapper = new ObjectMapper();
 	private Random random = new Random();
 	private ProxyController proxyController;
 
-	private Long maxDepth;
+	private String jobId;
 	private Long maxPages;
 	private List<String> excludedDataRegex;
 	private List<String> excludedLinkRegex;
-	private Long maxPagesCount = 0l;
 	private String threadId;
-	private String fireId;
 	private String crawlerUserAgent;
 	private String rootUrl;
-
-	private Set<String> processedSet = new HashSet<>();
-	private Set<String> processingSet = new HashSet<>();
+	private boolean reindex;
+	private ElasticSearchService elasticSearchService;
 
 	protected Map<String, Set<String>> disallowedLocations = new HashMap<>();
 	protected Map<String, Set<String>> allowedLocations = new HashMap<>();
@@ -111,17 +90,17 @@ public class FetcherJob implements Job {
 		List<String> initialUrls = (List<String>) dataMap.get(WebFetcher.PROPERTY_URLS);
 		List<String> chromeThreads = (List<String>) dataMap.get(WebFetcher.PROPERTY_CHROME_DRIVERS);
 
-		String dataFolder = dataMap.getString(WebFetcher.PROPERTY_DATAFOLDER);
+		jobId = UUID.randomUUID().toString();
+
 		boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
 
-		this.fireId = context.getFireInstanceId();
-		this.maxDepth = dataMap.getLong(WebFetcher.PROPERTY_MAX_DEPTH);
 		this.maxPages = dataMap.getLong(WebFetcher.PROPERTY_MAX_PAGES);
 		this.threadId = dataMap.getString(WebFetcher.PROPERTY_THREAD_ID);
 		this.rootUrl = dataMap.getString(WebFetcher.PROPERTY_ROOT_URL);
 		this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
 		this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
 		this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
+		this.reindex = dataMap.getBoolean(WebFetcher.PROPERTY_REINDEX);
 
 		String waitForCssSelector = dataMap.getString(WebFetcher.PROPERTY_WAIT_FOR_CSS_SELECTOR);
 		Long maxWaitForCssSelector = dataMap.getLong(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR);
@@ -135,9 +114,22 @@ public class FetcherJob implements Job {
 					dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
 		}
 
+		List<String> hostnames = (List<String>) dataMap.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES);
+		String username = dataMap.getString(WebFetcher.PROPERTY_ELASTIC_USERNAME);
+		String password = dataMap.getString(WebFetcher.PROPERTY_ELASTIC_PASSWORD);
+		boolean enableCrawl = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_CRAWL);
+		String proxyScheme = proxyController.getProxyHost();
+		String proxyHostname = proxyController.getProxyHost();
+		Long proxyPort = proxyController.getProxyPort();
+		String proxyUsername = proxyController.getProxyUser();
+		String proxyPassword = proxyController.getProxyPass();
+
+		elasticSearchService = new ElasticSearchService(hostnames, username, password, proxyScheme, proxyHostname, proxyPort, proxyUsername, proxyPassword);
+
 		if (urlController == null) {
 
 			urlController = new URLController(
+					elasticSearchService,
 					proxyController.getProxy(),
 					dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT),
 					dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT),
@@ -154,83 +146,129 @@ public class FetcherJob implements Job {
 			for (int x = 0; x < chromeThreads.size(); x++) {
 				threadPoolExecutors[x] = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
 			}
-
 		}
 
 		initialUrls.stream().map(i -> getUrlString(i, i)).forEach(initialUrl -> {
 
-			LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
+			String id = Base64.getEncoder().encodeToString(initialUrl.getBytes()).replace("/", "_");
+			String index = "logstash_web_fetcher_" + id.toLowerCase();
+			elasticSearchService.checkIndex(index);
 
-			String id = Base64.getEncoder().encodeToString(initialUrl.getBytes());
-			Map<String, String> legacyUrlMap = getLegacyUrlMap(dataFolder, id);
+			if (reindex) {
 
-			// Read the robot.txt first
+				LOGGER.info("Starting full reindex for thread : {}, url : {}", threadId, initialUrl);
+				Integer page = 0;
 
-			if (readRobot) {
+				List<Result> results = elasticSearchService.getUrlsToReindex(index, page);
 
-				LOGGER.info("Reading Robot : {}, url : {}", threadId, initialUrl);
+				while (!results.isEmpty()) {
 
-				Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
-				Matcher m = p.matcher(initialUrl);
+					results.parallelStream().forEach(result -> {
 
-				if (m.find()) {
-					String robotUrl = m.group(0) + ROBOTS;
-					readRobot(initialUrl, robotUrl, chromeThreads.get(0));
+						LOGGER.info("Reindexing url {}", result.getUrl());
 
-				} else {
-					LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
+						byte[] bytes = result.getContent();
+
+						Map<String, Object> metadata = new HashMap<>();
+						metadata.put(METADATA_URL, result.getUrl());
+						metadata.put(METADATA_INDEX, index);
+						metadata.put(METADATA_CONTENT_TYPE, result.getContentType());
+						metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
+						metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
+						metadata.put(METADATA_UUID, UUID.randomUUID().toString());
+						metadata.put(METADATA_STATUS, 200);
+						metadata.put(METADATA_CONTEXT, result.getRootUrl());
+						metadata.put(METADATA_COMMAND, Command.ADD.toString());
+						metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
+
+						consumer.accept(metadata);
+
+					});
+
+					page++;
+					results = elasticSearchService.getUrlsToReindex(index, page);
 				}
 
-				LOGGER.info("Finished Reading Robot : {}, url : {}", threadId, initialUrl);
+				LOGGER.info("Finished full reindex for thread : {}, url : {}", threadId, initialUrl);
 
 			}
 
-			// Extract the site content
-			processingSet.add(initialUrl);
-			Long depth = 0l;
+			if (enableCrawl) {
+				
+				LOGGER.info("Starting fetch for thread : {}, url : {}", threadId, initialUrl);
 
-			LOGGER.info("Starting to read urls : {}, url : {}, maxpages : {}, processedSet : {}", threadId, processingSet, maxPages, processedSet);
+				// Read the robot.txt first
 
-			while (processedSet.size() != processingSet.size()) {
+				if (readRobot) {
 
-				if (processedSet.size() >= maxPages && maxPages > 0) {
-					LOGGER.info("Max number of documents reached : {} for url {}", processingSet.size(), initialUrl);
-					break;
+					LOGGER.info("Reading Robot : {}, url : {}", threadId, initialUrl);
+
+					Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
+					Matcher m = p.matcher(initialUrl);
+
+					if (m.find()) {
+						String robotUrl = m.group(0) + ROBOTS;
+						readRobot(index, initialUrl, robotUrl, chromeThreads.get(0));
+
+					} else {
+						LOGGER.warn("Failed to find robot.txt url {}", initialUrl);
+					}
+
+					LOGGER.info("Finished Reading Robot : {}, url : {}", threadId, initialUrl);
+
 				}
 
-				Set<String> urls = processingSet.stream().filter(u -> !processedSet.contains(u)).collect(Collectors.toSet());
+				Integer randomValue = random.nextInt(chromeThreads.size());
 
-				for (String url : urls) {
+				LOGGER.info("Adding url {}", initialUrl);
+				extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(randomValue), index);
 
-					Integer randomValue = random.nextInt(chromeThreads.size());
-					Long currentDepth = depth;
+				List<Result> results = elasticSearchService.getUrlsToProcess(jobId, index);
 
-					LOGGER.info("Adding url {} to thread {}", url, randomValue);
-					threadPoolExecutors[randomValue].execute(() -> extractUrl(consumer, url, initialUrl, currentDepth, chromeThreads.get(randomValue), legacyUrlMap));
+				while (!results.isEmpty()) {
 
-				}
+					int threadCounter = 0;
 
-				for (int x = 0; x < threadPoolExecutors.length; x++) {
+					for (int y = 0; results.size() > y; y++) {
 
-					while (threadPoolExecutors[x].getActiveCount() > 0) {
+						Result result = results.get(y);
+						String driver = chromeThreads.get(threadCounter);
+						threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, result.getUrl(), result.getRootUrl(), driver, index));
 
-						try {
-							LOGGER.info("Waiting for site {} to be finished, active threads left {}, queue {}/{}", initialUrl, threadPoolExecutors[x].getActiveCount(), processedSet.size(), processingSet.size());
-							Thread.sleep(5000);
-						} catch (InterruptedException e) {
-							LOGGER.error("Failed to sleep in thread", e);
-							Thread.currentThread().interrupt();
+						if ((chromeThreads.size() - 1) == threadCounter) {
+							threadCounter = 0;
+						} else {
+							threadCounter++;
+						}
+
+					}
+
+					for (int x = 0; x < threadPoolExecutors.length; x++) {
+
+						int y = 0;
+
+						while (threadPoolExecutors[x].getActiveCount() > 0) {
+
+							y++;
+
+							try {
+								Thread.sleep(1000);
+							} catch (InterruptedException e) {
+								LOGGER.error("Failed to sleep in thread", e);
+								Thread.currentThread().interrupt();
+							}
+
+							if (y > 300) {
+								LOGGER.info("Waiting for site {} to be finished, active threads left {}", initialUrl, threadPoolExecutors[x].getActiveCount());
+							}
 						}
 					}
+
+					results = elasticSearchService.getUrlsToProcess(jobId, index);
 				}
 
-				depth++;
+				deleteOldDocuments(consumer, index);
 			}
-
-			saveLegacyUrlMap(dataFolder, id, legacyUrlMap);
-
-			// Compare to previously extracted content and delete delta
-			deleteOldDocuments(consumer, dataFolder, id);
 
 		});
 
@@ -238,68 +276,15 @@ public class FetcherJob implements Job {
 
 	}
 
-	private void saveLegacyUrlMap(String dataFolder, String id, Map<String, String> legacyUrlMap) {
+	private void readRobot(String index, String initialUrl, String robotUrl, String chromeDriver) {
 
-		if (dataFolder == null) {
-			return;
-		}
-
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_legacy.txt").toString());
-
-		try {
-
-			if (!pathFile.toFile().exists()) {
-
-				boolean created = pathFile.toFile().createNewFile();
-
-				if (!created) {
-					LOGGER.info("Could not create file : {}", pathFile);
-				}
-			}
-
-			String json = objectMapper.writeValueAsString(legacyUrlMap);
-			Files.write(pathFile, json.getBytes());
-		} catch (IOException e) {
-			LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);
-		}
-	}
-
-	private Map<String, String> getLegacyUrlMap(String dataFolder, String id) {
-
-		if (dataFolder == null) {
-			return new HashMap<>();
-		}
-
-		Map<String, String> legacyUrlMap = new HashMap<>();
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_legacy.txt").toString());
-
-		if (pathFile.toFile().exists()) {
-
-			try {
-				legacyUrlMap = (Map<String, String>) objectMapper.readValue(pathFile.toFile(), Map.class);
-			} catch (IOException e) {
-
-				LOGGER.info("Failed to read legacy file, deleting it", e);
-
-				boolean deleted = pathFile.toFile().delete();
-				LOGGER.info("Deleted old fetcher data : {}", deleted, e);
-
-				legacyUrlMap = new HashMap<>();
-
-			}
-		}
-
-		return legacyUrlMap;
-	}
-
-	private void readRobot(String initialUrl, String robotUrl, String chromeDriver) {
-
-		Result result = urlController.getURL(robotUrl, initialUrl, chromeDriver);
+		Result result = urlController.getURL(index, robotUrl, initialUrl, chromeDriver);
 
 		if (result.getContent() != null) {
 
 			try (Scanner scanner = new Scanner(IOUtils.toString(result.getContent(), StandardCharsets.UTF_8.name()))) {
 
+				elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_PROCESSED, "robot read");
 				String userAgent = "*";
 
 				while (scanner.hasNextLine()) {
@@ -353,14 +338,16 @@ public class FetcherJob implements Job {
 		}
 	}
 
-	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, Long depth, String chromeDriver, Map<String, String> legacyUrlMap) {
+	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlStringTmp, String rootUrl, String chromeDriver, String index) {
 
 		String rootUrlTmp = (this.rootUrl != null) ? this.rootUrl : rootUrl;
 		String urlString = getUrlString(urlStringTmp, rootUrlTmp);
 
+		LOGGER.info("Processing url {} in jobID {}", urlString, jobId);
+
 		try {
 
-			if (maxPages != 0 && maxPagesCount <= maxPages && !processedSet.contains(urlString)) {
+			if (maxPages != 0 && elasticSearchService.totalCountWithJobId(urlString, jobId, index) <= maxPages) {
 
 				Set<String> disallowedList = new HashSet<>();
 
@@ -384,57 +371,73 @@ public class FetcherJob implements Job {
 					}
 				}
 
-				Result result = urlController.getURL(urlString, rootUrlTmp, chromeDriver);
+				Result result = urlController.getURL(index, urlString, rootUrlTmp, chromeDriver);
 
 				if (result != null && result.getContent() != null) {
-					extractContent(consumer, result, depth, legacyUrlMap);
+					extractContent(consumer, result, index);
+
 				} else {
+					elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_FAILED, "content is empty");
+					elasticSearchService.flushIndex(index);
+
 					LOGGER.info("URL {} is does not have content", urlStringTmp);
 				}
 			}
 
-			processedSet.add(urlString);
-			
 		} catch (Exception e) {
 			LOGGER.error("Failed to retrieve URL from thread {}, url {}", threadId, urlString, e);
 		}
 
 	}
 
-	private void extractContent(Consumer<Map<String, Object>> consumer, Result result, Long depth, Map<String, String> legacyUrlMap) throws IOException {
+	private void extractContent(Consumer<Map<String, Object>> consumer, Result result, String index) throws IOException {
 
 		byte[] bytes = result.getContent();
 		Map<String, List<String>> headers = result.getHeaders();
 
-		Map<String, Object> metadata = new HashMap<>();
-		headers.entrySet().stream().filter(entry -> entry.getKey() != null).forEach(entry -> metadata.put(entry.getKey(), entry.getValue()));
+		Integer length = result.getLength();
 
-		metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
-		metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
-		metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
-		metadata.put(METADATA_URL, result.getUrl());
-		metadata.put(METADATA_UUID, UUID.randomUUID().toString());
-		metadata.put(METADATA_STATUS, 200);
-		metadata.put(METADATA_CONTEXT, result.getRootUrl());
-		metadata.put(METADATA_COMMAND, Command.ADD.toString());
+		if (!elasticSearchService.existsInIndexWithSize(result.getUrl(), length, index)) {
 
-		if (excludedDataRegex.stream().noneMatch(ex -> result.getUrl().matches(ex)) && result.getUrl().startsWith(result.getRootUrl())) {
+			if (excludedDataRegex.stream().noneMatch(ex -> result.getUrl().matches(ex)) && result.getUrl().startsWith(result.getRootUrl())) {
 
-			maxPagesCount++;
+				if (result.getCode() == 200 && result.getContent().length > 0) {
 
-			String hex = DigestUtils.md5Hex(result.getContent());
+					LOGGER.info("Sending url {}", result.getUrl());
+					elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_PROCESSED, "sent to API");
+					
+					Map<String, Object> metadata = new HashMap<>();
+					metadata.put(METADATA_URL, result.getUrl());
+					metadata.put(METADATA_INDEX, index);
+					metadata.put(METADATA_CONTENT_TYPE, result.getContentType());
+					metadata.put(METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
+					metadata.put(METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
+					metadata.put(METADATA_UUID, UUID.randomUUID().toString());
+					metadata.put(METADATA_STATUS, 200);
+					metadata.put(METADATA_CONTEXT, result.getRootUrl());
+					metadata.put(METADATA_COMMAND, Command.ADD.toString());
+					metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
 
-			if (legacyUrlMap.containsKey(result.getUrl()) && legacyUrlMap.get(result.getUrl()).equals(hex)) {
-				log("exclude_data", result, depth, metadata);
+					consumer.accept(metadata);
+
+				} else {
+
+					elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_FAILED, "Code is not 200 or content is empty");
+					LOGGER.info("Skipping url {}, code : {}, size {}", result.getUrl(), result.getCode(), result.getLength());
+				}
+
 			} else {
-				consumer.accept(metadata);
-				log("include_data", result, depth, metadata);
-				legacyUrlMap.put(result.getUrl(), hex);
+
+				elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_FAILED, "Excluded by regex");
+				LOGGER.info("Excluded url {}", result.getUrl());
 			}
 
 		} else {
-			log("exclude_data", result, depth, metadata);
+			elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_PROCESSED, "Url is already in index");
+			LOGGER.info("Url already in index {}", result.getUrl());
 		}
+
+		elasticSearchService.flushIndex(index);
 
 		if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
 
@@ -443,69 +446,20 @@ public class FetcherJob implements Job {
 			Elements elements = document.getElementsByAttribute("href");
 
 			String simpleUrlString = result.getRootUrl().replace(HTTP, "").replace(HTTPS, "");
-			Long newDepth = depth + 1;
-
-			// Excluded Pages - used just for logging
-
-			Set<String> excludedChildPages = elements.stream().map(e -> e.attr("href"))
-					.filter(href -> !href.equals("/") && !href.startsWith("//"))
-					.map(url -> getUrlString(url, result.getRootUrl()))
-					.filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
-					.filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
-					.filter(href -> !processingSet.contains(href))
-					.filter(href -> excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
-					.sorted()
-					.collect(Collectors.toSet());
-
-			excludedChildPages.stream()
-					.filter(href -> !processingSet.contains(href) && maxDepth == 0 || newDepth <= maxDepth)
-					.forEach(href -> log("exclude_link", href, result, depth, metadata));
-
-			// Included Pages - to be crawled
 
 			Set<String> includedChildPages = elements.stream().map(e -> e.attr("href"))
 					.filter(href -> !href.equals("/") && !href.startsWith("//"))
 					.map(url -> getUrlString(url, result.getRootUrl()))
 					.filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
 					.filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
-					.filter(href -> !processingSet.contains(href))
 					.filter(href -> !excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
 					.sorted()
 					.collect(Collectors.toSet());
 
-			includedChildPages.stream()
-					.filter(href -> !processingSet.contains(href) && maxDepth == 0 || newDepth <= maxDepth)
-					.forEach(href -> {
-						log("include_link", href, result, depth, metadata);
-						processingSet.add(href);
-					});
-
-			LOGGER.info("Child URLs after filtering from URL {} : {}", result.getUrl(), includedChildPages);
-
-			metadata.put(METADATA_CHILD, new ArrayList<>(includedChildPages));
-
+			includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, result.getRootUrl(), jobId, index));
+			elasticSearchService.flushIndex(index);
 		}
 
-	}
-
-	private void log(String action, String url, Result result, Long depth, Map<String, Object> metadata) {
-
-		LOGGER.info("{} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}, {} : {}",
-				LOGGER_ACTION, action,
-				LOGGER_ROOT_URL, result.getRootUrl(),
-				LOGGER_URL, url,
-				LOGGER_REFERENCE, metadata.get(METADATA_REFERENCE),
-				LOGGER_THREAD, this.threadId,
-				LOGGER_FIREID, this.fireId,
-				LOGGER_STATUS, result.getCode(),
-				LOGGER_PAGES, maxPagesCount,
-				LOGGER_DEPTH, depth,
-				LOGGER_MESSAGE, result.getMessage(),
-				LOGGER_SIZE, result.getContent().length);
-	}
-
-	private void log(String action, Result result, Long depth, Map<String, Object> metadata) {
-		log(action, result.getUrl(), result, depth, metadata);
 	}
 
 	private String getUrlString(String urlString, String rootUrl) {
@@ -547,6 +501,10 @@ public class FetcherJob implements Job {
 				urlString = rootUrl + urlString;
 			}
 
+			if (urlString.contains("#")) {
+				urlString = urlString.substring(0, urlString.indexOf("#") - 1);
+			}
+
 		} catch (MalformedURLException e) {
 			LOGGER.error("Failed to parse url {}", urlString, e);
 		}
@@ -554,54 +512,34 @@ public class FetcherJob implements Job {
 		return urlString;
 	}
 
-	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String dataFolder, String id) {
+	private void deleteOldDocuments(Consumer<Map<String, Object>> consumer, String index) {
 
-		if (dataFolder == null) {
-			return;
+		List<Result> results = elasticSearchService.getUrlsToDelete(jobId, index);
+
+		while (!results.isEmpty()) {
+
+			results.stream().forEach(result -> {
+
+				String reference = Base64.getEncoder().encodeToString(result.getUrl().getBytes());
+				LOGGER.info("Thread Sending Deletion {}, reference {}", threadId, reference);
+
+				Map<String, Object> metadata = new HashMap<>();
+				metadata.put(METADATA_REFERENCE, reference);
+				metadata.put(METADATA_COMMAND, Command.DELETE.toString());
+
+				consumer.accept(metadata);
+
+				try {
+					elasticSearchService.addNewUrl(result, jobId, index, ElasticSearchService.STATUS_DELETED, "document is sent for deletion");
+					elasticSearchService.flushIndex(index);
+				} catch (IOException e) {
+					LOGGER.error("Failed to delete the reference {}", reference, e);
+				}
+			});
+
+			results = elasticSearchService.getUrlsToDelete(jobId, index);
 		}
 
-		Path indexPath = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).toString());
-
-		if (!indexPath.toFile().exists()) {
-			indexPath.toFile().mkdirs();
-		}
-
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append("/fetched-data/").append(id).append("_tmp.txt").toString());
-
-		if (pathFile.toFile().exists()) {
-
-			try {
-				List<String> legacyFile = Arrays.asList(objectMapper.readValue(pathFile.toFile(), String[].class));
-				List<String> urlsForDeletion = legacyFile.stream().filter(l -> !processedSet.contains(l)).collect(Collectors.toList());
-
-				LOGGER.info("Thread deleting {}, deleting {} urls", threadId, urlsForDeletion.size());
-
-				urlsForDeletion.stream().forEach(url -> {
-
-					String reference = Base64.getEncoder().encodeToString(url.getBytes());
-					LOGGER.info("Thread Sending Deletion {}, reference {}", threadId, reference);
-
-					Map<String, Object> metadata = new HashMap<>();
-					metadata.put(METADATA_REFERENCE, reference);
-					metadata.put(METADATA_COMMAND, Command.DELETE.toString());
-
-					consumer.accept(metadata);
-
-				});
-
-				Files.delete(pathFile);
-
-			} catch (IOException e) {
-				LOGGER.warn("Failed to read legacy file", e);
-			}
-		}
-
-		try {
-			String json = objectMapper.writeValueAsString(processedSet);
-			Files.write(pathFile, json.getBytes());
-		} catch (IOException e) {
-			LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);
-		}
-
+		LOGGER.info("Finished deleting older documents/pages");
 	}
 }

@@ -9,9 +9,19 @@ public class Result {
 	private String url;
 	private String rootUrl;
 	private Integer code;
+	private Integer length;
 	private String message;
 	private byte[] content;
+	private String contentType;
 	private Map<String, List<String>> headers = new HashMap<>();
+
+	public String getContentType() {
+		return contentType;
+	}
+
+	public void setContentType(String contentType) {
+		this.contentType = contentType;
+	}
 
 	public String getUrl() {
 		return url;
@@ -59,5 +69,13 @@ public class Result {
 
 	public void setRootUrl(String rootUrl) {
 		this.rootUrl = rootUrl;
+	}
+
+	public Integer getLength() {
+		return length;
+	}
+
+	public void setLength(Integer length) {
+		this.length = length;
 	}
 }
