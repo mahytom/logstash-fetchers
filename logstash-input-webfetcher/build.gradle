@@ -25,12 +25,6 @@ pluginInfo.pluginName      = "webfetcher" // must match the @LogstashPlugin anno
 sourceCompatibility = 1.8
 targetCompatibility = 1.8
 
-
-buildDir = "build/gradle"
-eclipse {
-
-}
-
 buildscript {
     repositories {
         mavenCentral()

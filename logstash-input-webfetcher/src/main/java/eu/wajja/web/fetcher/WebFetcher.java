@@ -52,7 +52,6 @@ public class WebFetcher implements Input {
 	protected static final String PROPERTY_PROXY_PASS = "proxyPass";
 	protected static final String PROPERTY_CRON = "cron";
 	protected static final String PROPERTY_CONSUMER = "consumer";
-	protected static final String PROPERTY_THREAD_ID = "threadId";
 	protected static final String PROPERTY_CHROME_DRIVERS = "chromeDrivers";
 	protected static final String PROPERTY_CRAWLER_USER_AGENT = "crawlerUserAgent";
 	protected static final String PROPERTY_CRAWLER_REFERER = "crawlerReferer";
@@ -161,7 +160,6 @@ public class WebFetcher implements Input {
 			JobDataMap newJobDataMap = new JobDataMap(this.jobDataMap);
 			newJobDataMap.put(PROPERTY_URLS, urls);
 			newJobDataMap.put(PROPERTY_CONSUMER, consumer);
-			newJobDataMap.put(PROPERTY_THREAD_ID, threadId);
 
 			String uuid = UUID.randomUUID().toString();
 

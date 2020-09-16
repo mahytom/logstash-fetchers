@@ -7,37 +7,55 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.elasticsearch.action.admin.indices.flush.FlushRequest;
+import org.elasticsearch.action.bulk.BackoffPolicy;
+import org.elasticsearch.action.bulk.BulkProcessor;
+import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.get.GetRequest;
 import org.elasticsearch.action.index.IndexRequest;
+import org.elasticsearch.action.search.ClearScrollRequest;
+import org.elasticsearch.action.search.ClearScrollResponse;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.search.SearchScrollRequest;
 import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.client.RequestOptions;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.client.indices.CreateIndexRequest;
 import org.elasticsearch.client.indices.GetIndexRequest;
+import org.elasticsearch.common.unit.ByteSizeUnit;
+import org.elasticsearch.common.unit.ByteSizeValue;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentFactory;
 import org.elasticsearch.index.query.BoolQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.search.Scroll;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import eu.wajja.web.fetcher.enums.Status;
+import eu.wajja.web.fetcher.enums.SubStatus;
 import eu.wajja.web.fetcher.model.Result;
 
 public class ElasticSearchService {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(ElasticSearchService.class);
+	private static final Scroll scroll = new Scroll(TimeValue.timeValueHours(1l));;
 
 	private static final String DOCUMENT_TYPE = "_doc";
-	public static final String INDEX_SHARDS = "index.number_of_shards";
-	public static final String INDEX_NUMBER_OF_REPLICAS = "index.number_of_replicas";
+	private static final String INDEX_SHARDS = "index.number_of_shards";
+	private static final String INDEX_NUMBER_OF_REPLICAS = "index.number_of_replicas";
 	private ObjectMapper objectMapper = new ObjectMapper();
 
 	private static final String CODE = "code";
@@ -51,12 +69,8 @@ public class ElasticSearchService {
 	private static final String HEADERS = "headers";
 	private static final String MODIFIED_DATE = "modifiedDate";
 	private static final String STATUS = "status";
+	private static final String SUB_STATUS = "subStatus";
 	private static final String JOB_ID = "jobId";
-
-	public static final String STATUS_QUEUE = "queue";
-	public static final String STATUS_PROCESSED = "processed";
-	public static final String STATUS_FAILED = "failed";
-	public static final String STATUS_DELETED = "deleted";
 
 	private static final String MAPPINGS = "mappings";
 	private static final String TYPE = "type";
@@ -65,9 +79,51 @@ public class ElasticSearchService {
 	private static final String PROPERTIES = "properties";
 
 	private RestHighLevelClient restHighLevelClient;
+	private ExecutorService executor = Executors.newSingleThreadExecutor();
+	private BulkProcessor bulkProcessor;
 
 	public ElasticSearchService(List<String> hostnames, String username, String password, String proxyScheme, String proxyHostname, Long proxyPort, String proxyUsername, String proxyPassword) {
+
 		restHighLevelClient = new ElasticRestClient(hostnames, username, password, proxyScheme, proxyHostname, proxyPort, proxyUsername, proxyPassword).restHighLevelClient();
+
+		BulkProcessor.Listener listener = new BulkProcessor.Listener() {
+
+			@Override
+			public void beforeBulk(long executionId, BulkRequest request) {
+
+				LOGGER.info("Sending Queue Bulk Ingestion Request : {}, with documents : {}", executionId, request.numberOfActions());
+
+				request.requests().stream().forEach(r -> {
+
+					String id = new String(Base64.getDecoder().decode(r.id()));
+					LOGGER.info("Sending execution {}, reference {}", executionId, id);
+				});
+			}
+
+			@Override
+			public void afterBulk(long executionId, BulkRequest request, Throwable failure) {
+
+				LOGGER.error("Failed Queue Bulk Ingestion Request : {}, Error : {}", executionId, failure.getLocalizedMessage());
+			}
+
+			@Override
+			public void afterBulk(long executionId, BulkRequest request, BulkResponse response) {
+
+				LOGGER.info("Finished Queue Bulk Ingestion Request : {}", executionId);
+
+			}
+		};
+
+		BulkProcessor.Builder builder = BulkProcessor.builder(restHighLevelClient::bulkAsync, listener);
+
+		builder.setBulkActions(100);
+		builder.setConcurrentRequests(3);
+		builder.setBulkSize(new ByteSizeValue(30, ByteSizeUnit.MB));
+		builder.setFlushInterval(TimeValue.timeValueSeconds(30));
+		builder.setBackoffPolicy(BackoffPolicy.exponentialBackoff(TimeValue.timeValueMillis(100), 3));
+
+		bulkProcessor = builder.build();
+
 	}
 
 	public void checkIndex(String index) {
@@ -128,7 +184,32 @@ public class ElasticSearchService {
 		restHighLevelClient.indices().flush(flushRequest, RequestOptions.DEFAULT);
 	}
 
-	public void addNewUrl(Result result, String jobId, String index, String status, String message) throws IOException {
+	public void updateStatus(String url, String index, Status status, SubStatus subStatus, String message) {
+
+		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
+
+		UpdateRequest updateRequest = new UpdateRequest(index, DOCUMENT_TYPE, id);
+
+		try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
+
+			contentBuilder.startObject();
+
+			contentBuilder.field(STATUS, status.name());
+			contentBuilder.field(SUB_STATUS, subStatus.name());
+			contentBuilder.field(REASON, message);
+			contentBuilder.endObject();
+
+			updateRequest.doc(contentBuilder);
+
+			bulkProcessor.add(updateRequest);
+
+		} catch (IOException e) {
+			LOGGER.error("Failed to update url to index", e);
+		}
+
+	}
+
+	public void addNewUrl(Result result, String jobId, String index, Status status, SubStatus subStatus, String message) {
 
 		String id = Base64.getEncoder().encodeToString(result.getUrl().replace("https://", "").replace("http://", "").getBytes());
 
@@ -161,21 +242,22 @@ public class ElasticSearchService {
 			contentBuilder.field(URL, result.getUrl());
 			contentBuilder.field(HEADERS, objectMapper.writeValueAsString(map));
 			contentBuilder.field(MODIFIED_DATE, new Date().getTime());
-			contentBuilder.field(STATUS, status);
+			contentBuilder.field(STATUS, status.name());
+			contentBuilder.field(SUB_STATUS, subStatus.name());
 			contentBuilder.field(JOB_ID, jobId);
 			contentBuilder.field(REASON, message);
 			contentBuilder.endObject();
 
 			indexRequest.source(contentBuilder);
 
-			restHighLevelClient.index(indexRequest, RequestOptions.DEFAULT);
+			bulkProcessor.add(indexRequest);
 
 		} catch (IOException e) {
 			LOGGER.error("Failed to addNewUrl to index", e);
 		}
 	}
 
-	public void addNewUrl(String url, String jobId, String index, String status, String message) throws IOException {
+	public void addNewUrl(String url, String jobId, String index, Status status, SubStatus subStatus, String message) throws IOException {
 
 		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
 
@@ -189,137 +271,112 @@ public class ElasticSearchService {
 
 			contentBuilder.field(MODIFIED_DATE, new Date().getTime());
 			contentBuilder.field(STATUS, status);
+			contentBuilder.field(SUB_STATUS, subStatus.name());
 			contentBuilder.field(JOB_ID, jobId);
 			contentBuilder.field(REASON, message);
 			contentBuilder.endObject();
 
 			indexRequest.source(contentBuilder);
 
-			restHighLevelClient.index(indexRequest, RequestOptions.DEFAULT);
+			bulkProcessor.add(indexRequest);
 
 		} catch (IOException e) {
 			LOGGER.error("Failed to addNewUrl to index", e);
 		}
 	}
 
-	public List<Result> getUrlsToReindex(String index, Integer page) {
+	public Future<Boolean> getAsyncUrls(String index, List<Result> results, Status status) {
 
-		List<Result> urls = new ArrayList<>();
+		return executor.submit(() -> {
 
-		try {
-			SearchRequest searchRequest = new SearchRequest(index);
-			SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-			sourceBuilder.size(10);
-			sourceBuilder.from(page * 10);
+			try {
 
-			BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-			booleanQuery.must().add(QueryBuilders.termQuery(STATUS, STATUS_PROCESSED));
+				SearchRequest searchRequest = new SearchRequest(index);
+				SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+				searchSourceBuilder.query(QueryBuilders.termQuery(STATUS, status));
+				searchSourceBuilder.sort(URL, SortOrder.DESC);
+				searchSourceBuilder.size(10);
+				searchRequest.source(searchSourceBuilder);
 
-			sourceBuilder.query(booleanQuery);
-			searchRequest.source(sourceBuilder);
+				searchRequest.scroll(scroll);
 
-			SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+				SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
 
-			for (SearchHit searchHit : searchResponse.getHits().getHits()) {
+				Long totalDocuments = searchResponse.getHits().totalHits;
+				Long countDocuments = 0l;
 
-				Map<String, Object> source = searchHit.getSourceAsMap();
+				String scrollId = searchResponse.getScrollId();
+				SearchHit[] searchHits = searchResponse.getHits().getHits();
 
-				Result result = new Result();
+				countDocuments = countDocuments + searchHits.length;
+				LOGGER.info("Documents found {}/{}", countDocuments, totalDocuments);
 
-				result.setRootUrl((String) source.get(ROOT_URL));
-				result.setUrl((String) source.get(URL));
-				result.setContentType((String) source.get(CONTENT_TYPE));
+				while (searchHits != null && searchHits.length > 0) {
 
-				if (result.getContentType() != null) {
-
-					String contentTmp = (String) source.get(CONTENT);
-
-					if (contentTmp != null) {
-
-						if (result.getContentType().contains("html")) {
-							result.setContent(contentTmp.getBytes());
-						} else {
-							byte[] content = Base64.getDecoder().decode(contentTmp.getBytes());
-							result.setContent(content);
-						}
+					for (SearchHit searchHit : searchHits) {
+						results.add(mapResult(searchHit));
 					}
 
-					result.setCode((Integer) source.get(CODE));
-					result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
-					result.setLength((Integer) source.get(CONTENT_SIZE));
-					result.setMessage((String) source.get(MESSAGE));
-					result.setRootUrl((String) source.get(ROOT_URL));
-					result.setUrl((String) source.get(URL));
+					while (results.size() > 1000) {
+						LOGGER.debug("{} list is becoming too big, sleeping a bit", status);
+						Thread.sleep(1000);
+					}
+
+					SearchScrollRequest scrollRequest = new SearchScrollRequest(scrollId);
+					scrollRequest.scroll(scroll);
+					searchResponse = restHighLevelClient.scroll(scrollRequest, RequestOptions.DEFAULT);
+					scrollId = searchResponse.getScrollId();
+					searchHits = searchResponse.getHits().getHits();
+
+					countDocuments = countDocuments + searchHits.length;
+					LOGGER.info("Documents found {} {}/{}", status, countDocuments, totalDocuments);
 				}
 
-				urls.add(result);
+				ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
+				clearScrollRequest.addScrollId(scrollId);
+				ClearScrollResponse clearScrollResponse = restHighLevelClient.clearScroll(clearScrollRequest, RequestOptions.DEFAULT);
+
+				return clearScrollResponse.isSucceeded();
+
+			} catch (IOException e) {
+				LOGGER.info("Failed to find next in scroll ", e);
 			}
 
-		} catch (IOException e1) {
-			LOGGER.error("Failed to find all pages to reindex", e1);
-		}
-
-		return urls;
+			return false;
+		});
 	}
 
-	public List<Result> getUrlsToProcess(String index, Integer page) {
+	private Result mapResult(SearchHit searchHit) throws IOException {
 
-		List<Result> urls = new ArrayList<>();
+		Map<String, Object> source = searchHit.getSourceAsMap();
 
-		try {
-			SearchRequest searchRequest = new SearchRequest(index);
-			SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-			sourceBuilder.size(10);
-			sourceBuilder.from(page * 10);
+		Result result = new Result();
 
-			BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-			booleanQuery.must().add(QueryBuilders.termQuery(STATUS, STATUS_QUEUE));
+		result.setRootUrl((String) source.get(ROOT_URL));
+		result.setUrl((String) source.get(URL));
+		result.setContentType((String) source.get(CONTENT_TYPE));
 
-			sourceBuilder.query(booleanQuery);
-			searchRequest.source(sourceBuilder);
+		if (result.getContentType() != null) {
 
-			SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+			String contentTmp = (String) source.get(CONTENT);
 
-			for (SearchHit searchHit : searchResponse.getHits().getHits()) {
+			if (contentTmp != null) {
 
-				Map<String, Object> source = searchHit.getSourceAsMap();
-
-				Result result = new Result();
-
-				result.setRootUrl((String) source.get(ROOT_URL));
-				result.setUrl((String) source.get(URL));
-				result.setContentType((String) source.get(CONTENT_TYPE));
-
-				if (result.getContentType() != null) {
-
-					String contentTmp = (String) source.get(CONTENT);
-
-					if (contentTmp != null) {
-
-						if (result.getContentType().contains("html")) {
-							result.setContent(contentTmp.getBytes());
-						} else {
-							byte[] content = Base64.getDecoder().decode(contentTmp.getBytes());
-							result.setContent(content);
-						}
-					}
-
-					result.setCode((Integer) source.get(CODE));
-					result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
-					result.setLength((Integer) source.get(CONTENT_SIZE));
-					result.setMessage((String) source.get(MESSAGE));
-					result.setRootUrl((String) source.get(ROOT_URL));
-					result.setUrl((String) source.get(URL));
+				if (result.getContentType().contains("html")) {
+					result.setContent(contentTmp.getBytes());
+				} else {
+					byte[] content = Base64.getDecoder().decode(contentTmp.getBytes());
+					result.setContent(content);
 				}
-
-				urls.add(result);
 			}
 
-		} catch (IOException e1) {
-			LOGGER.error("Failed to find all pages to reindex", e1);
+			result.setCode((Integer) source.get(CODE));
+			result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
+			result.setLength((Integer) source.get(CONTENT_SIZE));
+			result.setMessage((String) source.get(MESSAGE));
 		}
 
-		return urls;
+		return result;
 	}
 
 	public List<Result> getUrlsToProcess(String jobId, String index) {
@@ -332,8 +389,7 @@ public class ElasticSearchService {
 			sourceBuilder.size(10);
 
 			BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-			booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
-			booleanQuery.must().add(QueryBuilders.termQuery(STATUS, STATUS_QUEUE));
+			booleanQuery.must().add(QueryBuilders.termQuery(STATUS, Status.queue));
 
 			sourceBuilder.query(booleanQuery);
 			searchRequest.source(sourceBuilder);
@@ -461,7 +517,7 @@ public class ElasticSearchService {
 				BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
 				booleanQuery.must().add(QueryBuilders.termQuery("_id", id));
 				booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
-				booleanQuery.must().add(QueryBuilders.termsQuery(STATUS, STATUS_PROCESSED, STATUS_FAILED));
+				booleanQuery.must().add(QueryBuilders.termsQuery(STATUS, Status.processed, Status.failed));
 
 				sourceBuilder.query(booleanQuery);
 				searchRequest.source(sourceBuilder);
@@ -476,13 +532,13 @@ public class ElasticSearchService {
 
 						contentBuilder.startObject();
 						contentBuilder.field(MODIFIED_DATE, new Date().getTime());
-						contentBuilder.field(STATUS, STATUS_QUEUE);
+						contentBuilder.field(STATUS, Status.queue);
 						contentBuilder.field(JOB_ID, jobId);
 						contentBuilder.endObject();
 
 						updateRequest.doc(contentBuilder);
 
-						restHighLevelClient.update(updateRequest, RequestOptions.DEFAULT);
+						bulkProcessor.add(updateRequest);
 
 					} catch (IOException e) {
 						LOGGER.error("Failed to add cache to index", e);
@@ -503,13 +559,13 @@ public class ElasticSearchService {
 					contentBuilder.field(JOB_ID, jobId);
 					contentBuilder.field(ROOT_URL, rootUrl);
 					contentBuilder.field(MODIFIED_DATE, new Date().getTime());
-					contentBuilder.field(STATUS, STATUS_QUEUE);
+					contentBuilder.field(STATUS, Status.queue);
 					contentBuilder.field(CONTENT_SIZE, 0);
 					contentBuilder.endObject();
 
 					indexRequest.source(contentBuilder);
 
-					restHighLevelClient.index(indexRequest, RequestOptions.DEFAULT);
+					bulkProcessor.add(indexRequest);
 
 				} catch (IOException e) {
 					LOGGER.error("Failed to add cache to index", e);
@@ -587,6 +643,18 @@ public class ElasticSearchService {
 
 		SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
 		return searchResponse.getHits().getTotalHits() > 0;
+	}
+
+	public boolean existsInIndexWithSize(Result result, String index) throws IOException {
+
+		Integer length = result.getLength();
+
+		if (length <= 0) {
+			return false;
+		}
+
+		String url = result.getUrl();
+		return existsInIndexWithSize(url, length, index);
 	}
 
 	public boolean existsInIndexWithSize(String url, Integer length, String index) throws IOException {

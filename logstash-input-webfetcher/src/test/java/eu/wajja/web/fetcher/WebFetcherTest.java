@@ -34,17 +34,22 @@ public class WebFetcherTest {
 	public void testWebFetcher() throws IOException {
 
 		Map<String, Object> configValues = new HashMap<>();
+		
+		String excludeData = (String) properties.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
+		String[] arrayExcludeData = objectMapper.readValue(excludeData, String[].class);
+		
 		configValues.put(WebFetcher.CONFIG_URLS.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_URLS), String[].class)));
-		configValues.put(WebFetcher.CONFIG_EXCLUDE_DATA.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_EXCLUDE_DATA), String[].class)));
+		configValues.put(WebFetcher.CONFIG_EXCLUDE_DATA.name(), Arrays.asList(arrayExcludeData));
 		configValues.put(WebFetcher.CONFIG_EXCLUDE_LINK.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_EXCLUDE_LINK), String[].class)));
 		configValues.put(WebFetcher.CONFIG_CRON.name(), properties.get(WebFetcher.PROPERTY_CRON));
 		configValues.put(WebFetcher.CONFIG_TIMEOUT.name(), new Long((String) properties.get(WebFetcher.PROPERTY_TIMEOUT)));
 		configValues.put(WebFetcher.CONFIG_MAX_PAGES.name(), new Long((String) properties.get(WebFetcher.PROPERTY_MAX_PAGES)));
 		configValues.put(WebFetcher.CONFIG_DISABLE_SSL_CHECK.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_SSL_CHECK)));
-		configValues.put(WebFetcher.CONFIG_CHROME_DRIVERS.name(),  Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_CHROME_DRIVERS), String[].class)));
-		configValues.put(WebFetcher.CONFIG_ELASTIC_HOSTNAMES.name(),  Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES), String[].class)));
+		configValues.put(WebFetcher.CONFIG_CHROME_DRIVERS.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_CHROME_DRIVERS), String[].class)));
+		configValues.put(WebFetcher.CONFIG_ELASTIC_HOSTNAMES.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES), String[].class)));
 		configValues.put(WebFetcher.CONFIG_REINDEX.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_REINDEX)));
-		
+		configValues.put(WebFetcher.CONFIG_ENABLE_CRAWL.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_ENABLE_CRAWL)));
+
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);
 		webFetcher.stopped = true;
@@ -65,7 +70,10 @@ public class WebFetcherTest {
 		@Override
 		public void accept(Map<String, Object> event) {
 			synchronized (this) {
-				events.add(event);
+
+				if (events.size() < 10) {
+					events.add(event);
+				}
 			}
 		}
 
