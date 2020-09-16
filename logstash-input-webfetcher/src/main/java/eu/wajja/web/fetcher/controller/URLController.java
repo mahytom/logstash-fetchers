@@ -7,7 +7,6 @@ import java.net.MalformedURLException;
 import java.net.Proxy;
 import java.net.SocketTimeoutException;
 import java.net.URL;
-import java.util.Base64;
 
 import javax.net.ssl.SSLException;
 
@@ -82,29 +81,38 @@ public class URLController {
 				Integer length = httpURLConnection.getContentLength();
 				result.setLength(length);
 
-				if (length > 0 && elasticSearchService.existsInIndexWithSize(currentUrl, length, index)) {
+				if (elasticSearchService.existsInIndex(currentUrl, index)) {
+
 					result = elasticSearchService.getFromIndex(currentUrl, index);
+
+					if (length > 0 && result.getLength() != null && result.getLength().equals(length)) {
+						return result;
+					}
+
+					// Result that was queued from parent url. still needs populating
+
+					result.setCode(code);
+					result.setMessage(message);
 					result.setContentType(parseContentType(httpURLConnection.getContentType()));
+					result.setLength(length);
+					result.setRootUrl(initialUrl);
+				}
+
+				/*
+				 * If pdf, do not use the webdriver, which was only used intitially to handle js
+				 */
+				if (httpURLConnection.getContentType().equals("application/pdf") || currentUrl.substring(currentUrl.length() - 3).equalsIgnoreCase("pdf")) {
+
+					LOGGER.debug("Found pdf, downloading {}", currentUrl);
+					result.setHeaders(httpURLConnection.getHeaderFields());
+					result.setContent(downloadContent(currentUrl));
 
 				} else {
 
-					/*
-					 * If pdf, do not use the webdriver, which was only used intitially to handle js
-					 */
-					if (httpURLConnection.getContentType().equals("application/pdf") || currentUrl.substring(currentUrl.length() - 3).equalsIgnoreCase("pdf")) {
-
-						LOGGER.debug("Found pdf, downloading {}", currentUrl);
-						result.setHeaders(httpURLConnection.getHeaderFields());
-						result.setContent(downloadContent(currentUrl));
-
-					} else {
-
-						closeConnection(httpURLConnection);
-						result.setHeaders(httpURLConnection.getHeaderFields());
-						byte[] bytes = webDriverController.getURL(result.getUrl(), chromeDriver, waitForCssSelector, maxWaitForCssSelector);
-						result.setContent(bytes);
-					}
-
+					closeConnection(httpURLConnection);
+					result.setHeaders(httpURLConnection.getHeaderFields());
+					byte[] bytes = webDriverController.getURL(result.getUrl(), chromeDriver, waitForCssSelector, maxWaitForCssSelector);
+					result.setContent(bytes);
 				}
 
 			} else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == HttpURLConnection.HTTP_SEE_OTHER) {

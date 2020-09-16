@@ -177,11 +177,19 @@ public class ElasticSearchService {
 		}
 	}
 
-	public void flushIndex(String index) throws IOException {
+	public void flushIndex(String index) {
 
-		FlushRequest flushRequest = new FlushRequest(index);
-		flushRequest.force(true);
-		restHighLevelClient.indices().flush(flushRequest, RequestOptions.DEFAULT);
+		try {
+			FlushRequest flushRequest = new FlushRequest(index);
+			flushRequest.force(true);
+			restHighLevelClient.indices().flush(flushRequest, RequestOptions.DEFAULT);
+
+			bulkProcessor.flush();
+
+		} catch (IOException e) {
+
+			e.printStackTrace();
+		}
 	}
 
 	public void updateStatus(String url, String index, Status status, SubStatus subStatus, String message) {
@@ -257,7 +265,7 @@ public class ElasticSearchService {
 		}
 	}
 
-	public void addNewUrl(String url, String jobId, String index, Status status, SubStatus subStatus, String message) throws IOException {
+	public void addNewUrl(String url, String rootUrl, String jobId, String index, Status status, SubStatus subStatus, String message) throws IOException {
 
 		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
 
@@ -274,6 +282,9 @@ public class ElasticSearchService {
 			contentBuilder.field(SUB_STATUS, subStatus.name());
 			contentBuilder.field(JOB_ID, jobId);
 			contentBuilder.field(REASON, message);
+			contentBuilder.field(ROOT_URL, rootUrl);
+			contentBuilder.field(URL, url);
+
 			contentBuilder.endObject();
 
 			indexRequest.source(contentBuilder);
@@ -379,65 +390,6 @@ public class ElasticSearchService {
 		return result;
 	}
 
-	public List<Result> getUrlsToProcess(String jobId, String index) {
-
-		List<Result> urls = new ArrayList<>();
-
-		try {
-			SearchRequest searchRequest = new SearchRequest(index);
-			SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-			sourceBuilder.size(10);
-
-			BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-			booleanQuery.must().add(QueryBuilders.termQuery(STATUS, Status.queue));
-
-			sourceBuilder.query(booleanQuery);
-			searchRequest.source(sourceBuilder);
-
-			SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-
-			for (SearchHit searchHit : searchResponse.getHits().getHits()) {
-
-				Map<String, Object> source = searchHit.getSourceAsMap();
-
-				Result result = new Result();
-
-				result.setRootUrl((String) source.get(ROOT_URL));
-				result.setUrl((String) source.get(URL));
-				result.setContentType((String) source.get(CONTENT_TYPE));
-
-				if (result.getContentType() != null) {
-
-					String contentTmp = (String) source.get(CONTENT);
-
-					if (contentTmp != null) {
-
-						if (result.getContentType().contains("html")) {
-							result.setContent(contentTmp.getBytes());
-						} else {
-							byte[] content = Base64.getDecoder().decode(contentTmp.getBytes());
-							result.setContent(content);
-						}
-					}
-
-					result.setCode((Integer) source.get(CODE));
-					result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
-					result.setLength((Integer) source.get(CONTENT_SIZE));
-					result.setMessage((String) source.get(MESSAGE));
-					result.setRootUrl((String) source.get(ROOT_URL));
-					result.setUrl((String) source.get(URL));
-				}
-
-				urls.add(result);
-			}
-
-		} catch (IOException e1) {
-			LOGGER.error("Failed to check if document exists", e1);
-		}
-
-		return urls;
-	}
-
 	public List<Result> getUrlsToDelete(String jobId, String index) {
 
 		List<Result> urls = new ArrayList<>();
@@ -512,67 +464,26 @@ public class ElasticSearchService {
 
 				SearchRequest searchRequest = new SearchRequest(index);
 				SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-				sourceBuilder.size(1);
+				sourceBuilder.size(0);
 
 				BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
 				booleanQuery.must().add(QueryBuilders.termQuery("_id", id));
 				booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
-				booleanQuery.must().add(QueryBuilders.termsQuery(STATUS, Status.processed, Status.failed));
 
 				sourceBuilder.query(booleanQuery);
 				searchRequest.source(sourceBuilder);
 
 				SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+				boolean documentWithJobIdExist = searchResponse.getHits().getTotalHits() > 0;
 
-				if (searchResponse.getHits().getTotalHits() == 0) {
-
-					UpdateRequest updateRequest = new UpdateRequest(index, DOCUMENT_TYPE, id);
-
-					try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
-
-						contentBuilder.startObject();
-						contentBuilder.field(MODIFIED_DATE, new Date().getTime());
-						contentBuilder.field(STATUS, Status.queue);
-						contentBuilder.field(JOB_ID, jobId);
-						contentBuilder.endObject();
-
-						updateRequest.doc(contentBuilder);
-
-						bulkProcessor.add(updateRequest);
-
-					} catch (IOException e) {
-						LOGGER.error("Failed to add cache to index", e);
-					}
-
-				}
-
-			} else {
-
-				IndexRequest indexRequest = new IndexRequest(index);
-				indexRequest.id(id);
-				indexRequest.type(DOCUMENT_TYPE);
-
-				try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
-
-					contentBuilder.startObject();
-					contentBuilder.field(URL, url);
-					contentBuilder.field(JOB_ID, jobId);
-					contentBuilder.field(ROOT_URL, rootUrl);
-					contentBuilder.field(MODIFIED_DATE, new Date().getTime());
-					contentBuilder.field(STATUS, Status.queue);
-					contentBuilder.field(CONTENT_SIZE, 0);
-					contentBuilder.endObject();
-
-					indexRequest.source(contentBuilder);
-
-					bulkProcessor.add(indexRequest);
-
-				} catch (IOException e) {
-					LOGGER.error("Failed to add cache to index", e);
+				if (documentWithJobIdExist) {
+					return;
 				}
 
 			}
-
+			
+			addNewUrl(url, rootUrl, jobId, index, Status.queue, SubStatus.included, "Found on parent page");
+			
 		} catch (IOException e1) {
 			LOGGER.error("Failed to check if document exists", e1);
 		}
@@ -613,7 +524,12 @@ public class ElasticSearchService {
 			}
 
 			result.setCode((Integer) source.get(CODE));
-			result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
+
+			String headerString = (String) source.get(HEADERS);
+			if (headerString != null) {
+				result.setHeaders(objectMapper.readValue(headerString, Map.class));
+			}
+
 			result.setLength((Integer) source.get(CONTENT_SIZE));
 			result.setMessage((String) source.get(MESSAGE));
 			result.setRootUrl((String) source.get(ROOT_URL));
@@ -625,55 +541,38 @@ public class ElasticSearchService {
 		return null;
 	}
 
-	public boolean existsInIndexWithSize(String url, Integer length, String jobId, String index) throws IOException {
+	public boolean existsInIndex(String url, String index) throws IOException {
 
 		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
 
 		SearchRequest searchRequest = new SearchRequest(index);
 		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-		sourceBuilder.size(1);
+		sourceBuilder.size(0);
 
-		BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-		booleanQuery.must().add(QueryBuilders.termQuery("_id", id));
-		booleanQuery.must().add(QueryBuilders.termQuery(CONTENT_SIZE, length));
-		booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
-
-		sourceBuilder.query(booleanQuery);
+		sourceBuilder.query(QueryBuilders.termQuery("_id", id));
 		searchRequest.source(sourceBuilder);
 
 		SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
 		return searchResponse.getHits().getTotalHits() > 0;
 	}
 
-	public boolean existsInIndexWithSize(Result result, String index) throws IOException {
+	public boolean hasMoreItemsInQueued(String index) {
 
-		Integer length = result.getLength();
+		SearchRequest searchRequest = new SearchRequest(index);
+		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+		sourceBuilder.size(0);
 
-		if (length <= 0) {
-			return false;
+		sourceBuilder.query(QueryBuilders.termQuery(STATUS, Status.queue));
+		searchRequest.source(sourceBuilder);
+
+		try {
+			SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+			return searchResponse.getHits().getTotalHits() > 0;
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
 
-		String url = result.getUrl();
-		return existsInIndexWithSize(url, length, index);
-	}
-
-	public boolean existsInIndexWithSize(String url, Integer length, String index) throws IOException {
-
-		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
-
-		SearchRequest searchRequest = new SearchRequest(index);
-		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-		sourceBuilder.size(1);
-
-		BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-		booleanQuery.must().add(QueryBuilders.termQuery("_id", id));
-		booleanQuery.must().add(QueryBuilders.termQuery(CONTENT_SIZE, length));
-
-		sourceBuilder.query(booleanQuery);
-		searchRequest.source(sourceBuilder);
-
-		SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-		return searchResponse.getHits().getTotalHits() > 0;
+		return false;
 	}
 
 	public long totalCountWithJobId(String url, String jobId, String index) throws IOException {

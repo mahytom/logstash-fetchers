@@ -65,7 +65,7 @@ public class RobotService {
 
 		Result result = urlController.getURL(index, robotUrl, initialUrl, chromeDriver);
 
-		if (result.getContent() != null) {
+		if (result != null && result.getContent() != null) {
 
 			try (Scanner scanner = new Scanner(IOUtils.toString(result.getContent(), StandardCharsets.UTF_8.name()))) {
 
@@ -119,14 +119,14 @@ public class RobotService {
 			}
 
 		} else {
-			LOGGER.warn("Failed to read robot.txt url, status {}, {}, {}", result.getCode(), initialUrl, result.getMessage());
+			LOGGER.warn("Failed to read robot.txt url, status {}", initialUrl);
 		}
 	}
 
-	public boolean isAllowed(String urlString, String index, String jobId, String crawlerUserAgent) throws IOException {
+	public boolean isAllowed(String urlString, String rootUrl, String index, String jobId, String crawlerUserAgent) throws IOException {
 
 		if (readRobot) {
-			
+
 			Set<String> disallowedList = new HashSet<>();
 
 			if (disallowedLocations.containsKey("*")) {
@@ -145,12 +145,12 @@ public class RobotService {
 
 				if (m.find()) {
 					LOGGER.info("URL {} is dissallowed", urlString);
-					elasticSearchService.addNewUrl(urlString, jobId, index, Status.failed, SubStatus.excluded, "excluded by robot");
+					elasticSearchService.addNewUrl(urlString, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "excluded by robot");
 					return false;
 				}
 			}
 		}
-		
+
 		return true;
 	}
 

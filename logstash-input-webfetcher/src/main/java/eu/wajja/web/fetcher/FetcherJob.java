@@ -144,21 +144,21 @@ public class FetcherJob implements Job {
 
 			if (reindex) {
 				reindexService.reIndex(consumer, jobId, initialUrl, index);
+				elasticSearchService.flushIndex(index);
+
 			}
 
 			if (enableCrawl) {
 
 				// Read the robot.txt first
 				robotService.checkRobot(chromeThreads.get(0), initialUrl, index, jobId);
-
-				// Check items that are still queued from last time
-				checkQueuedItems(consumer, initialUrl, index, chromeThreads);
-
+				
 				// Start the actual fetch
 				fetchNewItems(consumer, chromeThreads, initialUrl, index);
+				elasticSearchService.flushIndex(index);
 
 				// Deleting all the old items
-				deleteOldItems(consumer, index);
+//				deleteOldItems(consumer, index);
 			}
 
 		});
@@ -169,41 +169,9 @@ public class FetcherJob implements Job {
 
 	private void fetchNewItems(Consumer<Map<String, Object>> consumer, List<String> chromeThreads, String initialUrl, String index) {
 
-		LOGGER.info("Starting fetch for thread : {}, url : {}", jobId, initialUrl);
-		Integer randomValue = random.nextInt(chromeThreads.size());
+		LOGGER.info("Starting fetching items for thread : {}, url : {}", jobId, initialUrl);
 
-		LOGGER.info("Adding url {}", initialUrl);
-		extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(randomValue), index, true);
-
-		List<Result> results = elasticSearchService.getUrlsToProcess(jobId, index);
-
-		while (!results.isEmpty()) {
-
-			int threadCounter = 0;
-
-			for (int y = 0; results.size() > y; y++) {
-
-				Result result = results.get(y);
-				String driver = chromeThreads.get(threadCounter);
-				threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, result.getUrl(), result.getRootUrl(), driver, index, true));
-
-				if ((chromeThreads.size() - 1) == threadCounter) {
-					threadCounter = 0;
-				} else {
-					threadCounter++;
-				}
-
-			}
-
-			waitForThreads(initialUrl);
-
-			results = elasticSearchService.getUrlsToProcess(jobId, index);
-		}
-	}
-
-	private void checkQueuedItems(Consumer<Map<String, Object>> consumer, String initialUrl, String index, List<String> chromeThreads) {
-
-		LOGGER.info("Checking all the urls that are still queued : {}, url : {}", jobId, initialUrl);
+		extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(0), index, true);
 
 		LinkedList<Result> results = new LinkedList<>();
 		int threadCounter = 0;
@@ -213,25 +181,35 @@ public class FetcherJob implements Job {
 		while (!future.isDone()) {
 
 			while (!results.isEmpty()) {
-				addNewThread(results.pop(), threadCounter, chromeThreads, consumer, index);
+				addNewThread(results.pop(), threadCounter, chromeThreads, consumer, index, true);
 			}
 
 			waitForThreads(initialUrl, 100);
 		}
 
-		results.stream().forEach(result -> addNewThread(results.pop(), threadCounter, chromeThreads, consumer, index));
+		while (!results.isEmpty()) {
+			addNewThread(results.pop(), threadCounter, chromeThreads, consumer, index, true);
+		}
+
 		waitForThreads(initialUrl);
 
-		LOGGER.info("Finished parsing all queued items for thread : {}, url : {}", jobId, initialUrl);
+		if (elasticSearchService.hasMoreItemsInQueued(index)) {
+			fetchNewItems(consumer, chromeThreads, initialUrl, index);
+		}
+
+		LOGGER.info("Finished fetching items for thread : {}, url : {}", jobId, initialUrl);
+
 	}
 
-	private void addNewThread(Result result, int threadCounter, List<String> chromeThreads, Consumer<Map<String, Object>> consumer, String index) {
+	
+
+	private void addNewThread(Result result, int threadCounter, List<String> chromeThreads, Consumer<Map<String, Object>> consumer, String index, boolean checkChildren) {
 
 		String driver = chromeThreads.get(threadCounter);
 		String resultUrl = result.getUrl();
 		String resultRootUrl = result.getRootUrl();
 
-		threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, resultUrl, resultRootUrl, driver, index, false));
+		threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, resultUrl, resultRootUrl, driver, index, checkChildren));
 
 		if ((chromeThreads.size() - 1) == threadCounter) {
 			threadCounter = 0;
@@ -256,7 +234,7 @@ public class FetcherJob implements Job {
 				y++;
 
 				try {
-					LOGGER.info("Waiting for threads to come down, {}/{}", threadPoolExecutors[x].getActiveCount(), maxThreads);
+					LOGGER.info("Waiting for threads to come down, {}/{}", threadPoolExecutors[x].getQueue().size(), maxThreads);
 					Thread.sleep(3000);
 				} catch (InterruptedException e) {
 					LOGGER.error("Failed to sleep in thread", e);
@@ -283,17 +261,17 @@ public class FetcherJob implements Job {
 			if (maxPages == 0 || elasticSearchService.totalCountWithJobId(url, jobId, index) >= maxPages) {
 
 				// check if we dont have too many pages
-				elasticSearchService.addNewUrl(url, jobId, index, Status.processed, SubStatus.excluded, "too many fetched pages");
+				elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "too many fetched pages");
 
-			} else if (!robotService.isAllowed(url, index, jobId, crawlerUserAgent)) {
+			} else if (!robotService.isAllowed(url, rootUrl, index, jobId, crawlerUserAgent)) {
 
 				// Check if robot allows url
-				elasticSearchService.addNewUrl(url, jobId, index, Status.processed, SubStatus.excluded, "robot dissallowed");
+				elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "robot dissallowed");
 
 			} else if (excludedLinkRegex.stream().anyMatch(ex -> url.matches(ex))) {
 
 				// Exclude if link is not allowed
-				elasticSearchService.addNewUrl(url, jobId, index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex");
+				elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex");
 
 			} else {
 
@@ -304,17 +282,12 @@ public class FetcherJob implements Job {
 				if (result == null || result.getContent() == null) {
 
 					// content is empty
-					elasticSearchService.addNewUrl(url, jobId, index, Status.failed, SubStatus.excluded, "content is empty");
+					elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "content is empty");
 
 				} else if (result.getCode() != 200) {
 
 					// Exclude if data is not allowed
-					elasticSearchService.addNewUrl(url, jobId, index, Status.failed, SubStatus.excluded, result.getCode().toString());
-
-				} else if (elasticSearchService.existsInIndexWithSize(result, index)) {
-
-					// Exclude because its already in index
-					elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.included, "Url is already in index");
+					elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, result.getCode().toString());
 
 				} else if (excludedDataRegex.stream().anyMatch(ex -> result.getUrl().matches(ex))) {
 
@@ -342,7 +315,7 @@ public class FetcherJob implements Job {
 					elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.included, "Document sent to filter");
 				}
 
-				if (checkChildren && result != null) {
+				if (checkChildren && result != null && result.getContent() != null) {
 
 					Map<String, List<String>> headers = result.getHeaders();
 
@@ -363,9 +336,11 @@ public class FetcherJob implements Job {
 								.sorted()
 								.collect(Collectors.toSet());
 
-						includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, result.getRootUrl(), jobId, index));
+						includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, baseUrl, jobId, index));
 					}
 				}
+
+				elasticSearchService.flushIndex(index);
 
 			}
 
@@ -425,30 +400,30 @@ public class FetcherJob implements Job {
 		return urlString;
 	}
 
-	private void deleteOldItems(Consumer<Map<String, Object>> consumer, String index) {
-
-		List<Result> results = elasticSearchService.getUrlsToDelete(jobId, index);
-
-		while (!results.isEmpty()) {
-
-			results.stream().forEach(result -> {
-
-				String reference = Base64.getEncoder().encodeToString(result.getUrl().getBytes());
-				LOGGER.info("Thread Sending Deletion {}, reference {}", jobId, reference);
-
-				Map<String, Object> metadata = new HashMap<>();
-				metadata.put(MetadataConstant.METADATA_REFERENCE, reference);
-				metadata.put(MetadataConstant.METADATA_COMMAND, Command.DELETE.toString());
-
-				consumer.accept(metadata);
-
-				elasticSearchService.addNewUrl(result, jobId, index, Status.deleted, SubStatus.excluded, "document is sent for deletion");
-
-			});
-
-			results = elasticSearchService.getUrlsToDelete(jobId, index);
-		}
-
-		LOGGER.info("Finished deleting older documents/pages");
-	}
+//	private void deleteOldItems(Consumer<Map<String, Object>> consumer, String index) {
+//
+//		List<Result> results = elasticSearchService.getUrlsToDelete(jobId, index);
+//
+//		while (!results.isEmpty()) {
+//
+//			results.stream().forEach(result -> {
+//
+//				String reference = Base64.getEncoder().encodeToString(result.getUrl().getBytes());
+//				LOGGER.info("Thread Sending Deletion {}, reference {}", jobId, reference);
+//
+//				Map<String, Object> metadata = new HashMap<>();
+//				metadata.put(MetadataConstant.METADATA_REFERENCE, reference);
+//				metadata.put(MetadataConstant.METADATA_COMMAND, Command.DELETE.toString());
+//
+//				consumer.accept(metadata);
+//
+//				elasticSearchService.addNewUrl(result, jobId, index, Status.deleted, SubStatus.excluded, "document is sent for deletion");
+//
+//			});
+//
+//			results = elasticSearchService.getUrlsToDelete(jobId, index);
+//		}
+//
+//		LOGGER.info("Finished deleting older documents/pages");
+//	}
 }

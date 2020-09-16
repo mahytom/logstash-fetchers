@@ -52,7 +52,7 @@ public class WebFetcherTest {
 
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);
-		webFetcher.stopped = true;
+		webFetcher.stopped = false;
 
 		TestConsumer testConsumer = new TestConsumer();
 		webFetcher.start(testConsumer);
