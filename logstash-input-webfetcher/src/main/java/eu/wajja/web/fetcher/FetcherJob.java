@@ -234,7 +234,6 @@ public class FetcherJob implements Job {
 				y++;
 
 				try {
-					LOGGER.info("Waiting for threads to come down, {}/{}", threadPoolExecutors[x].getQueue().size(), maxThreads);
 					Thread.sleep(3000);
 				} catch (InterruptedException e) {
 					LOGGER.error("Failed to sleep in thread", e);
