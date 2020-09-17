@@ -1,7 +1,6 @@
 package eu.wajja.web.fetcher.elasticsearch;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
@@ -306,21 +305,18 @@ public class ElasticSearchService {
 				SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
 				searchSourceBuilder.query(QueryBuilders.termQuery(STATUS, status));
 				searchSourceBuilder.sort(URL, SortOrder.DESC);
-				searchSourceBuilder.size(10);
+				searchSourceBuilder.size(1);
 				searchRequest.source(searchSourceBuilder);
 
 				searchRequest.scroll(scroll);
 
 				SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-
-				Long totalDocuments = searchResponse.getHits().totalHits;
 				Long countDocuments = 0l;
 
 				String scrollId = searchResponse.getScrollId();
 				SearchHit[] searchHits = searchResponse.getHits().getHits();
 
 				countDocuments = countDocuments + searchHits.length;
-				LOGGER.info("Documents found {}/{}", countDocuments, totalDocuments);
 
 				while (searchHits != null && searchHits.length > 0) {
 
@@ -329,7 +325,7 @@ public class ElasticSearchService {
 					}
 
 					while (results.size() > 1000) {
-						LOGGER.debug("{} list is becoming too big, sleeping a bit", status);
+						LOGGER.debug("{} - {} list is becoming too big, sleeping a bit", index, status);
 						Thread.sleep(1000);
 					}
 
@@ -340,7 +336,6 @@ public class ElasticSearchService {
 					searchHits = searchResponse.getHits().getHits();
 
 					countDocuments = countDocuments + searchHits.length;
-					LOGGER.info("Documents found {} {}/{}", status, countDocuments, totalDocuments);
 				}
 
 				ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
@@ -390,65 +385,6 @@ public class ElasticSearchService {
 		return result;
 	}
 
-	public List<Result> getUrlsToDelete(String jobId, String index) {
-
-		List<Result> urls = new ArrayList<>();
-
-		try {
-			SearchRequest searchRequest = new SearchRequest(index);
-			SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-			sourceBuilder.size(10);
-
-			BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-			booleanQuery.mustNot().add(QueryBuilders.termQuery(JOB_ID, jobId));
-
-			sourceBuilder.query(booleanQuery);
-			searchRequest.source(sourceBuilder);
-
-			SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-
-			for (SearchHit searchHit : searchResponse.getHits().getHits()) {
-
-				Map<String, Object> source = searchHit.getSourceAsMap();
-
-				Result result = new Result();
-
-				result.setRootUrl((String) source.get(ROOT_URL));
-				result.setUrl((String) source.get(URL));
-				result.setContentType((String) source.get(CONTENT_TYPE));
-
-				if (result.getContentType() != null) {
-
-					String contentTmp = (String) source.get(CONTENT);
-
-					if (contentTmp != null) {
-
-						if (result.getContentType().contains("html")) {
-							result.setContent(contentTmp.getBytes());
-						} else {
-							byte[] content = Base64.getDecoder().decode(contentTmp.getBytes());
-							result.setContent(content);
-						}
-					}
-
-					result.setCode((Integer) source.get(CODE));
-					result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
-					result.setLength((Integer) source.get(CONTENT_SIZE));
-					result.setMessage((String) source.get(MESSAGE));
-					result.setRootUrl((String) source.get(ROOT_URL));
-					result.setUrl((String) source.get(URL));
-				}
-
-				urls.add(result);
-			}
-
-		} catch (IOException e1) {
-			LOGGER.error("Failed to check if document exists", e1);
-		}
-
-		return urls;
-	}
-
 	public void addNewChildUrl(String url, String rootUrl, String jobId, String index) {
 
 		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
@@ -481,9 +417,9 @@ public class ElasticSearchService {
 				}
 
 			}
-			
+
 			addNewUrl(url, rootUrl, jobId, index, Status.queue, SubStatus.included, "Found on parent page");
-			
+
 		} catch (IOException e1) {
 			LOGGER.error("Failed to check if document exists", e1);
 		}
@@ -558,14 +494,15 @@ public class ElasticSearchService {
 
 	public boolean hasMoreItemsInQueued(String index) {
 
-		SearchRequest searchRequest = new SearchRequest(index);
-		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-		sourceBuilder.size(0);
-
-		sourceBuilder.query(QueryBuilders.termQuery(STATUS, Status.queue));
-		searchRequest.source(sourceBuilder);
-
 		try {
+
+			SearchRequest searchRequest = new SearchRequest(index);
+			SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+			sourceBuilder.size(0);
+
+			sourceBuilder.query(QueryBuilders.termQuery(STATUS, Status.queue));
+			searchRequest.source(sourceBuilder);
+
 			SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
 			return searchResponse.getHits().getTotalHits() > 0;
 		} catch (IOException e) {
@@ -575,22 +512,27 @@ public class ElasticSearchService {
 		return false;
 	}
 
-	public long totalCountWithJobId(String url, String jobId, String index) throws IOException {
+	public long totalCountWithJobId(String jobId, String index) {
 
-		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
+		try {
+			SearchRequest searchRequest = new SearchRequest(index);
+			SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+			sourceBuilder.size(0);
 
-		SearchRequest searchRequest = new SearchRequest(index);
-		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-		sourceBuilder.size(0);
+			BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
+			booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
+			booleanQuery.must().add(QueryBuilders.termQuery(STATUS, Status.processed));
 
-		BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-		booleanQuery.must().add(QueryBuilders.termQuery("_id", id));
-		booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
+			sourceBuilder.query(booleanQuery);
+			searchRequest.source(sourceBuilder);
 
-		sourceBuilder.query(booleanQuery);
-		searchRequest.source(sourceBuilder);
+			SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+			return searchResponse.getHits().getTotalHits();
 
-		SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-		return searchResponse.getHits().getTotalHits();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
+
+		return 0l;
 	}
 }
