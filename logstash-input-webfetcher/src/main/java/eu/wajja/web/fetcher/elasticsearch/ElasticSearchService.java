@@ -179,11 +179,13 @@ public class ElasticSearchService {
 	public void flushIndex(String index) {
 
 		try {
-			FlushRequest flushRequest = new FlushRequest(index);
-			flushRequest.force(true);
-			restHighLevelClient.indices().flush(flushRequest, RequestOptions.DEFAULT);
 
 			bulkProcessor.flush();
+
+			FlushRequest flushRequest = new FlushRequest(index);
+			flushRequest.force(true);
+
+			restHighLevelClient.indices().flush(flushRequest, RequestOptions.DEFAULT);
 
 		} catch (IOException e) {
 
@@ -296,6 +298,10 @@ public class ElasticSearchService {
 	}
 
 	public Future<Boolean> getAsyncUrls(String index, List<Result> results, Status status) {
+		return getAsyncUrls(index, results, status, null);
+	}
+
+	public Future<Boolean> getAsyncUrls(String index, List<Result> results, Status status, SubStatus subStatus) {
 
 		return executor.submit(() -> {
 
@@ -303,7 +309,17 @@ public class ElasticSearchService {
 
 				SearchRequest searchRequest = new SearchRequest(index);
 				SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
-				searchSourceBuilder.query(QueryBuilders.termQuery(STATUS, status));
+
+				BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
+				booleanQuery.must().add(QueryBuilders.termQuery(STATUS, status));
+
+				if (subStatus != null) {
+					String subStatusKeyword = SUB_STATUS + ".keyword";
+					booleanQuery.must().add(QueryBuilders.termQuery(subStatusKeyword, subStatus));
+				}
+
+				searchSourceBuilder.query(booleanQuery);
+
 				searchSourceBuilder.sort(URL, SortOrder.DESC);
 				searchSourceBuilder.size(1);
 				searchRequest.source(searchSourceBuilder);

@@ -4,6 +4,5 @@ public enum Status {
 
 	queue,
 	processed,
-	failed,
-	deleted
+	failed
 }

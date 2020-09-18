@@ -94,6 +94,7 @@ public class FetcherJob implements Job {
 					dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
 		}
 
+		boolean enableDelete = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_DELETE);
 		boolean enableCrawl = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_CRAWL);
 		boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
 		boolean reindex = dataMap.getBoolean(WebFetcher.PROPERTY_REINDEX);
@@ -156,9 +157,11 @@ public class FetcherJob implements Job {
 				fetchNewItems(consumer, chromeThreads, initialUrl, index);
 				elasticSearchService.flushIndex(index);
 
-				// Deleting all the old items
-//				deleteOldItems(consumer, initialUrl, index);
+			}
 
+			if (enableDelete) {
+				// Deleting all the old items
+				deleteOldItems(consumer, initialUrl, index);
 			}
 
 		});
@@ -173,30 +176,41 @@ public class FetcherJob implements Job {
 
 		extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(0), index, true);
 
-		LinkedList<Result> results = new LinkedList<>();
-		Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.queue);
+		try {
 
-		while (!future.isDone()) {
+			// TODO : The index doesn't have the time to flush. so nothing is found in the
+			// next step. fix this at some point
+			Thread.sleep(1000);
+
+			LinkedList<Result> results = new LinkedList<>();
+			Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.queue);
+
+			while (!future.isDone()) {
+
+				while (!results.isEmpty()) {
+					addNewThread(results.pop(), chromeThreads, consumer, index, true);
+				}
+
+				waitForThreads(initialUrl, 100);
+			}
 
 			while (!results.isEmpty()) {
 				addNewThread(results.pop(), chromeThreads, consumer, index, true);
 			}
 
-			waitForThreads(initialUrl, 100);
-		}
+			waitForThreads(initialUrl);
 
-		while (!results.isEmpty()) {
-			addNewThread(results.pop(), chromeThreads, consumer, index, true);
-		}
+			if (maxPages == 0 || elasticSearchService.totalCountWithJobId(jobId, index) >= maxPages) {
+				return;
+			}
 
-		waitForThreads(initialUrl);
+			if (elasticSearchService.hasMoreItemsInQueued(index)) {
+				fetchNewItems(consumer, chromeThreads, initialUrl, index);
+			}
 
-		if (maxPages == 0 || elasticSearchService.totalCountWithJobId(jobId, index) >= maxPages) {
-			return;
-		}
-
-		if (elasticSearchService.hasMoreItemsInQueued(index)) {
-			fetchNewItems(consumer, chromeThreads, initialUrl, index);
+		} catch (InterruptedException e) {
+			LOGGER.info("InterruptedException", e);
+			Thread.currentThread().interrupt();
 		}
 
 		LOGGER.info("Finished fetching items for thread : {}, url : {}", jobId, initialUrl);
@@ -291,6 +305,10 @@ public class FetcherJob implements Job {
 				} else if (excludedDataRegex.stream().anyMatch(ex -> result.getUrl().matches(ex))) {
 
 					// Exclude if data is not allowed
+
+					List<String> excluded = excludedDataRegex.stream().filter(ex -> result.getUrl().matches(ex)).collect(Collectors.toList());
+					LOGGER.info("Excluding url {} because it matched data regex {}", result.getUrl(), excluded);
+
 					elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.excluded, "excludedDataRegex");
 
 				} else {
@@ -404,41 +422,38 @@ public class FetcherJob implements Job {
 		LOGGER.info("Starting deleting items for thread : {}, url : {}", jobId, initialUrl);
 
 		LinkedList<Result> results = new LinkedList<>();
-		Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.deleted);
+		Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.processed, SubStatus.excluded);
 
 		while (!future.isDone()) {
 
 			while (!results.isEmpty()) {
 
 				Result result = results.pop();
-				String reference = Base64.getEncoder().encodeToString(result.getUrl().getBytes());
-
-				Map<String, Object> metadata = new HashMap<>();
-				metadata.put(MetadataConstant.METADATA_REFERENCE, reference);
-				metadata.put(MetadataConstant.METADATA_COMMAND, Command.DELETE.toString());
-
-				consumer.accept(metadata);
-
-				LOGGER.info("Deleting item for thread : {}, url : {}", jobId, result.getUrl());
+				deleteResult(consumer, result);
 			}
 		}
 
 		while (!results.isEmpty()) {
 
 			Result result = results.pop();
-			String reference = Base64.getEncoder().encodeToString(result.getUrl().getBytes());
-
-			Map<String, Object> metadata = new HashMap<>();
-			metadata.put(MetadataConstant.METADATA_REFERENCE, reference);
-			metadata.put(MetadataConstant.METADATA_COMMAND, Command.DELETE.toString());
-
-			consumer.accept(metadata);
-
-			LOGGER.info("Deleting item for thread : {}, url : {}", jobId, result.getUrl());
+			deleteResult(consumer, result);
 
 		}
 
 		LOGGER.info("Finished deleting items for thread : {}, url : {}", jobId, initialUrl);
 
+	}
+
+	private void deleteResult(Consumer<Map<String, Object>> consumer, Result result) {
+
+		String reference = Base64.getEncoder().encodeToString(result.getUrl().getBytes());
+
+		Map<String, Object> metadata = new HashMap<>();
+		metadata.put(MetadataConstant.METADATA_REFERENCE, reference);
+		metadata.put(MetadataConstant.METADATA_COMMAND, Command.DELETE.toString());
+
+		consumer.accept(metadata);
+
+		LOGGER.info("Deleting item for thread : {}, url : {}", jobId, result.getUrl());
 	}
 }
