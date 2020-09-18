@@ -129,7 +129,11 @@ input {
    password => "password"
 ```
 -- Password to login into confluence 
-   
+
+```
+   sleep => 10
+```
+-- Sleep between HTTP calls, in ms.
 
 ## How Build and Run the Confluence Fetcher in Logstash
 
