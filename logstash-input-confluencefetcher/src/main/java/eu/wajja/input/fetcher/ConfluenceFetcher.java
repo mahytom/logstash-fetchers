@@ -69,6 +69,7 @@ public class ConfluenceFetcher implements Input {
 
 	/** Data Sync Configuration **/
 	public static final PluginConfigSpec<Boolean> CONFIG_DATA_SYNC = PluginConfigSpec.booleanSetting("enableDataSync", true);
+	public static final PluginConfigSpec<Long> CONFIG_SLEEP = PluginConfigSpec.numSetting("sleep", 1);
 	public static final PluginConfigSpec<Long> CONFIG_DATA_BATCH = PluginConfigSpec.numSetting("dataSyncBatchSize", 100);
 	public static final PluginConfigSpec<Long> CONFIG_DATA_THREADS = PluginConfigSpec.numSetting("dataSyncThreadSize", 3);
 	public static final PluginConfigSpec<List<Object>> CONFIG_SPACES = PluginConfigSpec.arraySetting("spaces", new ArrayList<>(), false, false);
@@ -87,17 +88,15 @@ public class ConfluenceFetcher implements Input {
 	private String password;
 	private String baseUrl;
 	private List<String> spaces;
-	private ListeningExecutorService executorUser;
-	private ListeningExecutorService executorData;
 	private boolean enableUserSync;
 	private boolean enableDataSync;
 	private Long userBatchSize;
-	private Long dataBatchSize;
 	private boolean stopped = false;
 	private String cronUser;
 	private String cronData;
 	private String dataFolder;
 	private Long dataSyncThreadSize;
+	private Long sleep;
 
 	private List<String> dataAttachmentsInclude;
 	private List<String> dataAttachmentsExclude;
@@ -123,17 +122,15 @@ public class ConfluenceFetcher implements Input {
 		/** Generic Configuration **/
 		this.baseUrl = config.get(CONFIG_URL);
 		this.dataFolder = config.get(CONFIG_DATA_FOLDER);
+		this.sleep = config.get(CONFIG_SLEEP);
 
 		/** User Sync Configuration **/
 		this.enableUserSync = config.get(CONFIG_USER_SYNC);
-		this.executorUser = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool((config.get(CONFIG_USER_THREADS)).intValue()));
 		this.userBatchSize = config.get(CONFIG_USER_BATCH);
 		this.cronUser = config.get(CONFIG_USER_CRON);
 
 		/** Data Sync Configuration **/
 		this.enableDataSync = config.get(CONFIG_DATA_SYNC);
-		this.executorData = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool((config.get(CONFIG_DATA_THREADS)).intValue()));
-		this.dataBatchSize = config.get(CONFIG_DATA_BATCH);
 		this.spaces = config.get(CONFIG_SPACES).stream().map(spc -> (String) spc).collect(Collectors.toList());
 		this.cronData = config.get(CONFIG_DATA_CRON);
 		this.dataSyncThreadSize = config.get(CONFIG_DATA_THREADS);
@@ -160,6 +157,7 @@ public class ConfluenceFetcher implements Input {
 					JobDataMap newJobDataMap = new JobDataMap();
 					newJobDataMap.put("consumer", consumer);
 					newJobDataMap.put("batchSize", this.userBatchSize);
+					newJobDataMap.put("sleep", this.sleep);
 					newJobDataMap.put("remotePersonServiceImpl", new RemotePersonServiceImpl(provider, executor));
 					newJobDataMap.put("remoteGroupServiceImpl", new RemoteGroupServiceImpl(provider, executor));
 
@@ -192,7 +190,7 @@ public class ConfluenceFetcher implements Input {
 
 					// SOAP
 					try {
-						
+
 						String confluenceLocation = this.baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2?wsdl";
 						String confluenceService = "ConfluenceSoapServiceService";
 						String confluenceServicepoint = this.baseUrl + "/plugins/servlet/soap-axis1/confluenceservice-v2";
@@ -231,6 +229,7 @@ public class ConfluenceFetcher implements Input {
 					newJobDataMap.put("dataSpaceExclude", this.dataSpaceExclude);
 					newJobDataMap.put("dataFolder", this.dataFolder);
 					newJobDataMap.put("dataSyncThreadSize", this.dataSyncThreadSize);
+					newJobDataMap.put("sleep", this.sleep);
 
 					String uuid = UUID.randomUUID().toString();
 
@@ -286,6 +285,7 @@ public class ConfluenceFetcher implements Input {
 				/** Generic Configuration **/
 				CONFIG_URL,
 				CONFIG_DATA_FOLDER,
+				CONFIG_SLEEP,
 
 				/** User Sync Configuration **/
 				CONFIG_USER_SYNC,

@@ -35,19 +35,22 @@ public class ConfluenceGroupFetcher implements Job {
 	private static final String METADATA_REFERENCE = "reference";
 	private static final String METADATA_GROUPS = "groups";
 	private static final String METADATA_COMMAND = "command";
-	private static final String METADATA_URL = "url";
+	private Long sleep;
 
+	@SuppressWarnings("deprecation")
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
 
 		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
 
+		@SuppressWarnings("unchecked")
 		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get("consumer");
 
 		RemotePersonServiceImpl remotePersonServiceImpl = (RemotePersonServiceImpl) dataMap.get("remotePersonServiceImpl");
 		RemoteGroupServiceImpl groupServiceImpl = (RemoteGroupServiceImpl) dataMap.get("remoteGroupServiceImpl");
-		
+
 		Long batchSize = (Long) dataMap.get("batchSize");
+		sleep = (Long) dataMap.get("sleep");
 
 		int size = 0;
 		PageRequest pageRequestGroups = new SimplePageRequest(size, batchSize.intValue());
@@ -76,6 +79,12 @@ public class ConfluenceGroupFetcher implements Job {
 
 			} catch (ClientHandlerException e) {
 				LOGGER.info("Failed to retrieve group", e);
+			}
+
+			try {
+				Thread.sleep(this.sleep);
+			} catch (InterruptedException e) {
+				LOGGER.info("Could not continue sleeping");
 			}
 
 			size = size + batchSize.intValue();
@@ -125,6 +134,12 @@ public class ConfluenceGroupFetcher implements Job {
 			LOGGER.info("Group {}, found batch user size {}, current size {}", group.getName(), personResponse.size(), users.size());
 
 			users.addAll(personResponse.getResults().stream().map(u -> u.getOptionalUsername().getOrNull()).filter(Objects::nonNull).collect(Collectors.toList()));
+
+			try {
+				Thread.sleep(this.sleep);
+			} catch (InterruptedException e) {
+				LOGGER.info("Could not continue sleeping");
+			}
 
 			size = size + batchSize.intValue();
 			pageRequest = new SimplePageRequest(size, batchSize.intValue());

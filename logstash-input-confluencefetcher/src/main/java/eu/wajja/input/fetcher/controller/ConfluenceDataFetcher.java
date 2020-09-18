@@ -130,7 +130,8 @@ public class ConfluenceDataFetcher implements Job {
 	private String dataFolder;
 	private ThreadPoolExecutor executorService;
 	private Long threads;
-
+	private Long sleep;
+	
 	@SuppressWarnings("unchecked")
 	@Override
 	public void execute(JobExecutionContext context) throws JobExecutionException {
@@ -154,7 +155,8 @@ public class ConfluenceDataFetcher implements Job {
 		this.dataPageExclude = (List<String>) dataMap.getOrDefault("dataPageExclude", new ArrayList<>());
 		this.batchSize = (Long) dataMap.getOrDefault("batchSize", 10l);
 		this.dataFolder = dataMap.getString("dataFolder");
-
+		this.sleep = (Long) dataMap.get("sleep");
+		
 		this.threads = (Long) dataMap.get("dataSyncThreadSize");
 		this.executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
 
@@ -377,6 +379,12 @@ public class ConfluenceDataFetcher implements Job {
 
 				}
 
+				try {
+					Thread.sleep(this.sleep);
+				} catch (InterruptedException e) {
+					LOGGER.info("Could not continue sleeping");
+				}
+				
 				size = size + batchSize.intValue();
 				pageRequest = new SimplePageRequest(size, batchSize.intValue());
 				pageResponse = remoteContentServiceImpl
@@ -494,6 +502,12 @@ public class ConfluenceDataFetcher implements Job {
 
 				contents.addAll(attachments.getResults().stream().collect(Collectors.toList()));
 
+				try {
+					Thread.sleep(this.sleep);
+				} catch (InterruptedException e) {
+					LOGGER.info("Could not continue sleeping");
+				}
+				
 				size = size + batchSize.intValue();
 				pageRequest = new SimplePageRequest(size, batchSize.intValue());
 				attachments = remoteAttachmentServiceImpl
@@ -539,8 +553,6 @@ public class ConfluenceDataFetcher implements Job {
 
 		PageRequest pageRequest = new SimplePageRequest(0, 10);
 		ContentRestrictionsPageResponse contentRestrictionsPageResponse = remoteContentRestrictionServiceImpl.getRestrictions(content.getId(), pageRequest).claim();
-
-		List<ContentRestriction> pp = contentRestrictionsPageResponse.getResults();
 
 		contentRestrictionsPageResponse.getResults().stream().filter(x -> x.getOperation().getOperationKey().equals(OperationKey.READ)).forEach(perm -> {
 
@@ -588,6 +600,12 @@ public class ConfluenceDataFetcher implements Job {
 				remoteSpaceFinder.withKeys(sites.toArray(new String[sites.size()]));
 			}
 
+			try {
+				Thread.sleep(this.sleep);
+			} catch (InterruptedException e) {
+				LOGGER.info("Could not continue sleeping");
+			}
+			
 			pageResponse = remoteSpaceFinder.fetchMany(pageRequest).claim();
 
 		}
