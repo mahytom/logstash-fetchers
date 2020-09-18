@@ -51,7 +51,7 @@ public class WebFetcherTest {
 		configValues.put(WebFetcher.CONFIG_ENABLE_CRAWL.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_ENABLE_CRAWL)));
 		configValues.put(WebFetcher.CONFIG_READ_ROBOT.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_READ_ROBOT)));
 		
-		configValues.put(WebFetcher.CONFIG_ROOT_URL.name(),  properties.get(WebFetcher.PROPERTY_ROOT_URL));
+//		configValues.put(WebFetcher.CONFIG_ROOT_URL.name(),  properties.get(WebFetcher.PROPERTY_ROOT_URL));
 //		configValues.put(WebFetcher.CONFIG_MAX_DEPTH.name(), new Long((String) properties.get(WebFetcher.PROPERTY_MAX_DEPTH)));
 		
 		Configuration config = new ConfigurationImpl(configValues);
