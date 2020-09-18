@@ -88,7 +88,8 @@ public class ConfluenceGroupFetcherTest {
 		jobDataMap.put("remoteGroupServiceImpl", remoteGroupServiceImpl);
 		jobDataMap.put("consumer", consumer);
 		jobDataMap.put("batchSize", 1l);
-
+		jobDataMap.put("sleep", 1l);
+		
 		Mockito.when(jobDetail.getJobDataMap()).thenReturn(jobDataMap);
 
 	}
