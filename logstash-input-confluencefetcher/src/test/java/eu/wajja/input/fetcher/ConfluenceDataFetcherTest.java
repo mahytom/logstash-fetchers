@@ -168,7 +168,8 @@ public class ConfluenceDataFetcherTest {
 		jobDataMap.put("username", "USER_001");
 		jobDataMap.put("password", "PASSWORD_001");
 		jobDataMap.put("dataSyncThreadSize", 1l);
-
+		jobDataMap.put("sleep", 1l);
+		
 		Mockito.when(jobDetail.getJobDataMap()).thenReturn(jobDataMap);
 		
 		Mockito.when(remoteSpaceServiceImpl.find(Mockito.any()))
