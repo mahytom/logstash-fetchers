@@ -31,6 +31,7 @@ input {
    dataSpaceExclude => ["regex"]
    username => "username"
    password => "password"
+   sleep => 10
   }
 }
 ```
