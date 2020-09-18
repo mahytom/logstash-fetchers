@@ -10,10 +10,19 @@ public class Result {
 	private String rootUrl;
 	private Integer code;
 	private Integer length;
+	private String eTag;
 	private String message;
 	private byte[] content;
 	private String contentType;
 	private Map<String, List<String>> headers = new HashMap<>();
+
+	public String geteTag() {
+		return eTag;
+	}
+
+	public void seteTag(String eTag) {
+		this.eTag = eTag;
+	}
 
 	public String getContentType() {
 		return contentType;

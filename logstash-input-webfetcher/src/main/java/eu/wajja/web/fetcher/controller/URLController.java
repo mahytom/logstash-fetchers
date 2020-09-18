@@ -78,14 +78,11 @@ public class URLController {
 
 			if (code == HttpURLConnection.HTTP_OK) {
 
-				Integer length = httpURLConnection.getContentLength();
-				result.setLength(length);
-
 				if (elasticSearchService.existsInIndex(currentUrl, index)) {
 
 					result = elasticSearchService.getFromIndex(currentUrl, index);
 
-					if (length > 0 && result.getLength() != null && result.getLength().equals(length)) {
+					if (isSameDocument(httpURLConnection, result)) {
 						return result;
 					}
 
@@ -94,7 +91,6 @@ public class URLController {
 					result.setCode(code);
 					result.setMessage(message);
 					result.setContentType(parseContentType(httpURLConnection.getContentType()));
-					result.setLength(length);
 					result.setRootUrl(initialUrl);
 				}
 
@@ -151,6 +147,27 @@ public class URLController {
 		}
 
 		return result;
+	}
+
+	private boolean isSameDocument(HttpURLConnection httpURLConnection, Result result) {
+
+		int length = httpURLConnection.getContentLength();
+		String eTag = httpURLConnection.getHeaderField("ETag");
+
+		if (eTag != null && result.geteTag() != null && result.geteTag().equals(eTag)) {
+			return true;
+
+		} else if (length > 0 && result.getLength() != null && result.getLength().equals(length)) {
+			return true;
+
+		} else {
+
+			result.setLength(length);
+			result.seteTag(eTag);
+
+			return false;
+		}
+
 	}
 
 	private String parseContentType(String contentType) {

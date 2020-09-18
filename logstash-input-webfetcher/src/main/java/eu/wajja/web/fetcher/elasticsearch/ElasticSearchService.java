@@ -63,6 +63,7 @@ public class ElasticSearchService {
 	private static final String CONTENT_SIZE = "contentSize";
 	private static final String MESSAGE = "message";
 	private static final String REASON = "reason";
+	private static final String ETAG = "etag";
 	private static final String ROOT_URL = "rootUrl";
 	private static final String URL = "url";
 	private static final String HEADERS = "headers";
@@ -255,6 +256,7 @@ public class ElasticSearchService {
 			contentBuilder.field(SUB_STATUS, subStatus.name());
 			contentBuilder.field(JOB_ID, jobId);
 			contentBuilder.field(REASON, message);
+			contentBuilder.field(ETAG, result.geteTag());
 			contentBuilder.endObject();
 
 			indexRequest.source(contentBuilder);
@@ -396,6 +398,7 @@ public class ElasticSearchService {
 			result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
 			result.setLength((Integer) source.get(CONTENT_SIZE));
 			result.setMessage((String) source.get(MESSAGE));
+			result.seteTag((String) source.get(ETAG));
 		}
 
 		return result;
@@ -486,7 +489,8 @@ public class ElasticSearchService {
 			result.setMessage((String) source.get(MESSAGE));
 			result.setRootUrl((String) source.get(ROOT_URL));
 			result.setUrl((String) source.get(URL));
-
+			result.seteTag((String) source.get(ETAG));
+			
 			return result;
 		}
 
