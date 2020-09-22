@@ -41,7 +41,7 @@ public class ReindexService {
 		LOGGER.info("Starting full reindex for thread : {}, url : {}", jobId, initialUrl);
 
 		LinkedList<Result> results = new LinkedList<>();
-		Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.processed);
+		Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.processed, SubStatus.included);
 		List<Result> queueItems = new ArrayList<>();
 
 		while (!future.isDone()) {

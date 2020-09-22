@@ -379,7 +379,9 @@ public class ElasticSearchService {
 		result.setRootUrl((String) source.get(ROOT_URL));
 		result.setUrl((String) source.get(URL));
 		result.setContentType((String) source.get(CONTENT_TYPE));
-
+		result.setStatus((String) source.get(STATUS));
+		result.setSubStatus((String) source.get(SUB_STATUS));
+		
 		if (result.getContentType() != null) {
 
 			String contentTmp = (String) source.get(CONTENT);
@@ -399,6 +401,7 @@ public class ElasticSearchService {
 			result.setLength((Integer) source.get(CONTENT_SIZE));
 			result.setMessage((String) source.get(MESSAGE));
 			result.seteTag((String) source.get(ETAG));
+			
 		}
 
 		return result;

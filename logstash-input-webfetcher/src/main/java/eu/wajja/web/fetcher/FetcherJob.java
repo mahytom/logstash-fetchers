@@ -98,6 +98,7 @@ public class FetcherJob implements Job {
 		boolean enableCrawl = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_CRAWL);
 		boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
 		boolean reindex = dataMap.getBoolean(WebFetcher.PROPERTY_REINDEX);
+		boolean enableRegex = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_REGEX);
 
 		List<String> hostnames = (List<String>) dataMap.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES);
 
@@ -141,6 +142,12 @@ public class FetcherJob implements Job {
 			String id = Base64.getEncoder().encodeToString(initialUrl.getBytes()).replace("/", "_");
 			String index = "logstash_web_fetcher_" + id.toLowerCase();
 			elasticSearchService.checkIndex(index);
+
+			if (enableRegex) {
+
+				// Here we rerun though all the completed pages, check the regexes are correct
+				reRunRegexExclusions(initialUrl, index);
+			}
 
 			if (reindex) {
 				reindexService.reIndex(consumer, jobId, initialUrl, index);
@@ -417,6 +424,75 @@ public class FetcherJob implements Job {
 		return urlString;
 	}
 
+	private void reRunRegexExclusions(String initialUrl, String index) {
+
+		LOGGER.info("Starting regexes items for thread : {}, url : {}", jobId, initialUrl);
+
+		LinkedList<Result> results = new LinkedList<>();
+		Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.processed);
+
+		while (!future.isDone()) {
+
+			while (!results.isEmpty()) {
+
+				Result result = results.pop();
+				checkStatus(index, result);
+
+			}
+		}
+
+		while (!results.isEmpty()) {
+
+			Result result = results.pop();
+			checkStatus(index, result);
+		}
+
+		LOGGER.info("Finished regexes items for thread : {}, url : {}", jobId, initialUrl);
+
+	}
+
+	private void checkStatus(String index, Result result) {
+
+		SubStatus subStatus = null;
+
+		if (result.getSubStatus() != null) {
+			subStatus = SubStatus.valueOf(result.getSubStatus());
+		}
+
+		String href = getUrlString(result.getUrl(), result.getRootUrl());
+
+		List<String> linkExcluded = excludedLinkRegex.parallelStream().filter(ex -> href.matches(ex)).collect(Collectors.toList());
+		List<String> dataExcluded = excludedDataRegex.parallelStream().filter(ex -> href.matches(ex)).collect(Collectors.toList());
+
+		if (!linkExcluded.isEmpty()) {
+
+			LOGGER.info("excluded link regex for url {}, regex {}", result.getUrl(), linkExcluded);
+
+			// Exclude from processed
+			if (subStatus == null || subStatus.equals(SubStatus.included)) {
+				elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex");
+			}
+
+		} else if (!dataExcluded.isEmpty()) {
+
+			LOGGER.info("excluded data regex for url {}, regex {}", result.getUrl(), dataExcluded);
+
+			// Exclude from processed
+			if (subStatus == null || subStatus.equals(SubStatus.included)) {
+				elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.excluded, "regex excludedDataRegex");
+			}
+
+		} else {
+
+			LOGGER.info("regex enabled for url {}", result.getUrl());
+
+			// Include from processed
+			if (subStatus == null || subStatus.equals(SubStatus.excluded)) {
+				elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.included, "Document sent to filter");
+			}
+		}
+	}
+
 	private void deleteOldItems(Consumer<Map<String, Object>> consumer, String initialUrl, String index) {
 
 		LOGGER.info("Starting deleting items for thread : {}, url : {}", jobId, initialUrl);
@@ -454,6 +530,6 @@ public class FetcherJob implements Job {
 
 		consumer.accept(metadata);
 
-		LOGGER.info("Deleting item for thread : {}, url : {}", jobId, result.getUrl());
-	}
+        LOGGER.info("Deleting item for thread : {}, url : {}", jobId, result.getUrl());
+    }
 }

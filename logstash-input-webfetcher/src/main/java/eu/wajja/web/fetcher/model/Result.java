@@ -11,6 +11,8 @@ public class Result {
 	private Integer code;
 	private Integer length;
 	private String eTag;
+	private String status;
+	private String subStatus;
 	private String message;
 	private byte[] content;
 	private String contentType;
@@ -18,6 +20,22 @@ public class Result {
 
 	public String geteTag() {
 		return eTag;
+	}
+
+	public String getStatus() {
+		return status;
+	}
+
+	public void setStatus(String status) {
+		this.status = status;
+	}
+
+	public String getSubStatus() {
+		return subStatus;
+	}
+
+	public void setSubStatus(String subStatus) {
+		this.subStatus = subStatus;
 	}
 
 	public void seteTag(String eTag) {
