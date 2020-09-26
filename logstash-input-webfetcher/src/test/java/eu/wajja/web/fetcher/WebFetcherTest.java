@@ -52,6 +52,7 @@ public class WebFetcherTest {
 		configValues.put(WebFetcher.CONFIG_READ_ROBOT.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_READ_ROBOT)));
 		
 		configValues.put(WebFetcher.CONFIG_ENABLE_REGEX.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_ENABLE_REGEX)));
+		configValues.put(WebFetcher.CONFIG_ENABLE_DELETE.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_ENABLE_DELETE)));
 //		configValues.put(WebFetcher.CONFIG_ROOT_URL.name(),  properties.get(WebFetcher.PROPERTY_ROOT_URL));
 //		configValues.put(WebFetcher.CONFIG_MAX_DEPTH.name(), new Long((String) properties.get(WebFetcher.PROPERTY_MAX_DEPTH)));
 		

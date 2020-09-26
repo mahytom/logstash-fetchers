@@ -49,513 +49,521 @@ import eu.wajja.web.fetcher.model.Result;
 
 public class ElasticSearchService {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(ElasticSearchService.class);
-	private static final Scroll scroll = new Scroll(TimeValue.timeValueHours(1l));;
+    private static final Logger LOGGER = LoggerFactory.getLogger(ElasticSearchService.class);
+    private static final Scroll scroll = new Scroll(TimeValue.timeValueHours(1l));;
 
-	private static final String DOCUMENT_TYPE = "_doc";
-	private static final String INDEX_SHARDS = "index.number_of_shards";
-	private static final String INDEX_NUMBER_OF_REPLICAS = "index.number_of_replicas";
-	private ObjectMapper objectMapper = new ObjectMapper();
+    private static final String DOCUMENT_TYPE = "_doc";
+    private static final String INDEX_SHARDS = "index.number_of_shards";
+    private static final String INDEX_NUMBER_OF_REPLICAS = "index.number_of_replicas";
+    private ObjectMapper objectMapper = new ObjectMapper();
 
-	private static final String CODE = "code";
-	private static final String CONTENT_TYPE = "contentType";
-	private static final String CONTENT = "content";
-	private static final String CONTENT_SIZE = "contentSize";
-	private static final String MESSAGE = "message";
-	private static final String REASON = "reason";
-	private static final String ETAG = "etag";
-	private static final String ROOT_URL = "rootUrl";
-	private static final String URL = "url";
-	private static final String HEADERS = "headers";
-	private static final String MODIFIED_DATE = "modifiedDate";
-	private static final String STATUS = "status";
-	private static final String SUB_STATUS = "subStatus";
-	private static final String JOB_ID = "jobId";
+    private static final String CODE = "code";
+    private static final String CONTENT_TYPE = "contentType";
+    private static final String CONTENT = "content";
+    private static final String CONTENT_SIZE = "contentSize";
+    private static final String MESSAGE = "message";
+    private static final String REASON = "reason";
+    private static final String ETAG = "etag";
+    private static final String ROOT_URL = "rootUrl";
+    private static final String URL = "url";
+    private static final String HEADERS = "headers";
+    private static final String MODIFIED_DATE = "modifiedDate";
+    private static final String STATUS = "status";
+    private static final String SUB_STATUS = "subStatus";
+    private static final String JOB_ID = "jobId";
 
-	private static final String MAPPINGS = "mappings";
-	private static final String TYPE = "type";
-	private static final String KEYWORD = "keyword";
-	private static final String NUMERIC = "long";
-	private static final String PROPERTIES = "properties";
+    private static final String MAPPINGS = "mappings";
+    private static final String TYPE = "type";
+    private static final String KEYWORD = "keyword";
+    private static final String NUMERIC = "long";
+    private static final String PROPERTIES = "properties";
 
-	private RestHighLevelClient restHighLevelClient;
-	private ExecutorService executor = Executors.newSingleThreadExecutor();
-	private BulkProcessor bulkProcessor;
+    private RestHighLevelClient restHighLevelClient;
+    private ExecutorService executor = Executors.newSingleThreadExecutor();
+    private BulkProcessor bulkProcessor;
 
-	public ElasticSearchService(List<String> hostnames, String username, String password, String proxyScheme, String proxyHostname, Long proxyPort, String proxyUsername, String proxyPassword) {
+    public ElasticSearchService(List<String> hostnames, String username, String password, String proxyScheme, String proxyHostname, Long proxyPort, String proxyUsername, String proxyPassword) {
 
-		restHighLevelClient = new ElasticRestClient(hostnames, username, password, proxyScheme, proxyHostname, proxyPort, proxyUsername, proxyPassword).restHighLevelClient();
+        restHighLevelClient = new ElasticRestClient(hostnames, username, password, proxyScheme, proxyHostname, proxyPort, proxyUsername, proxyPassword).restHighLevelClient();
 
-		BulkProcessor.Listener listener = new BulkProcessor.Listener() {
+        BulkProcessor.Listener listener = new BulkProcessor.Listener() {
 
-			@Override
-			public void beforeBulk(long executionId, BulkRequest request) {
+            @Override
+            public void beforeBulk(long executionId, BulkRequest request) {
 
-				LOGGER.info("Sending Queue Bulk Ingestion Request : {}, with documents : {}", executionId, request.numberOfActions());
+                LOGGER.info("Sending Queue Bulk Ingestion Request : {}, with documents : {}", executionId, request.numberOfActions());
 
-				request.requests().stream().forEach(r -> {
+                request.requests().stream().forEach(r -> {
 
-					String id = new String(Base64.getDecoder().decode(r.id()));
-					LOGGER.info("Sending execution {}, reference {}", executionId, id);
-				});
-			}
+                    String id = new String(Base64.getDecoder().decode(r.id()));
+                    LOGGER.info("Sending execution {}, reference {}", executionId, id);
+                });
+            }
 
-			@Override
-			public void afterBulk(long executionId, BulkRequest request, Throwable failure) {
+            @Override
+            public void afterBulk(long executionId, BulkRequest request, Throwable failure) {
 
-				LOGGER.error("Failed Queue Bulk Ingestion Request : {}, Error : {}", executionId, failure.getLocalizedMessage());
-			}
+                LOGGER.error("Failed Queue Bulk Ingestion Request : {}, Error : {}", executionId, failure.getLocalizedMessage());
+            }
 
-			@Override
-			public void afterBulk(long executionId, BulkRequest request, BulkResponse response) {
+            @Override
+            public void afterBulk(long executionId, BulkRequest request, BulkResponse response) {
 
-				LOGGER.info("Finished Queue Bulk Ingestion Request : {}", executionId);
+                LOGGER.info("Finished Queue Bulk Ingestion Request : {}", executionId);
 
-			}
-		};
+            }
+        };
 
-		BulkProcessor.Builder builder = BulkProcessor.builder(restHighLevelClient::bulkAsync, listener);
+        BulkProcessor.Builder builder = BulkProcessor.builder(restHighLevelClient::bulkAsync, listener);
 
-		builder.setBulkActions(100);
-		builder.setConcurrentRequests(3);
-		builder.setBulkSize(new ByteSizeValue(30, ByteSizeUnit.MB));
-		builder.setFlushInterval(TimeValue.timeValueSeconds(30));
-		builder.setBackoffPolicy(BackoffPolicy.exponentialBackoff(TimeValue.timeValueMillis(100), 3));
+        builder.setBulkActions(100);
+        builder.setConcurrentRequests(3);
+        builder.setBulkSize(new ByteSizeValue(30, ByteSizeUnit.MB));
+        builder.setFlushInterval(TimeValue.timeValueSeconds(30));
+        builder.setBackoffPolicy(BackoffPolicy.exponentialBackoff(TimeValue.timeValueMillis(100), 3));
 
-		bulkProcessor = builder.build();
+        bulkProcessor = builder.build();
 
-	}
+    }
 
-	public void checkIndex(String index) {
+    public void checkIndex(String index) {
 
-		try {
-			GetIndexRequest request = new GetIndexRequest(index);
-			boolean indexExists = restHighLevelClient.indices().exists(request, RequestOptions.DEFAULT);
+        try {
+            GetIndexRequest request = new GetIndexRequest(index);
+            boolean indexExists = restHighLevelClient.indices().exists(request, RequestOptions.DEFAULT);
 
-			if (!indexExists) {
+            if (!indexExists) {
 
-				try (XContentBuilder xBuilder = XContentFactory.jsonBuilder()) {
+                try (XContentBuilder xBuilder = XContentFactory.jsonBuilder()) {
 
-					xBuilder.startObject();
+                    xBuilder.startObject();
 
-					xBuilder.startObject("settings");
-					xBuilder.field(INDEX_SHARDS, 1);
-					xBuilder.field(INDEX_NUMBER_OF_REPLICAS, 1);
-					xBuilder.endObject();
+                    xBuilder.startObject("settings");
+                    xBuilder.field(INDEX_SHARDS, 1);
+                    xBuilder.field(INDEX_NUMBER_OF_REPLICAS, 1);
+                    xBuilder.endObject();
 
-					xBuilder.startObject(MAPPINGS);
-					xBuilder.startObject(PROPERTIES);
+                    xBuilder.startObject(MAPPINGS);
+                    xBuilder.startObject(PROPERTIES);
 
-					xBuilder.startObject(CODE).field(TYPE, KEYWORD).endObject();
-					xBuilder.startObject(CONTENT_TYPE).field(TYPE, KEYWORD).endObject();
-					xBuilder.startObject(CONTENT_SIZE).field(TYPE, NUMERIC).endObject();
-					xBuilder.startObject(MESSAGE).field(TYPE, KEYWORD).endObject();
-					xBuilder.startObject(ROOT_URL).field(TYPE, KEYWORD).endObject();
-					xBuilder.startObject(URL).field(TYPE, KEYWORD).endObject();
-					xBuilder.startObject(HEADERS).field(TYPE, KEYWORD).endObject();
-					xBuilder.startObject(MODIFIED_DATE).field(TYPE, NUMERIC).endObject();
-					xBuilder.startObject(STATUS).field(TYPE, KEYWORD).endObject();
-					xBuilder.startObject(JOB_ID).field(TYPE, KEYWORD).endObject();
+                    xBuilder.startObject(CODE).field(TYPE, KEYWORD).endObject();
+                    xBuilder.startObject(CONTENT_TYPE).field(TYPE, KEYWORD).endObject();
+                    xBuilder.startObject(CONTENT_SIZE).field(TYPE, NUMERIC).endObject();
+                    xBuilder.startObject(MESSAGE).field(TYPE, KEYWORD).endObject();
+                    xBuilder.startObject(ROOT_URL).field(TYPE, KEYWORD).endObject();
+                    xBuilder.startObject(URL).field(TYPE, KEYWORD).endObject();
+                    xBuilder.startObject(HEADERS).field(TYPE, KEYWORD).endObject();
+                    xBuilder.startObject(MODIFIED_DATE).field(TYPE, NUMERIC).endObject();
+                    xBuilder.startObject(STATUS).field(TYPE, KEYWORD).endObject();
+                    xBuilder.startObject(JOB_ID).field(TYPE, KEYWORD).endObject();
 
-					xBuilder.endObject();
-					xBuilder.endObject();
+                    xBuilder.endObject();
+                    xBuilder.endObject();
 
-					xBuilder.endObject();
+                    xBuilder.endObject();
 
-					// Create
-					CreateIndexRequest createIndexRequest = new CreateIndexRequest(index);
-					createIndexRequest.source(xBuilder);
-					restHighLevelClient.indices().create(createIndexRequest, RequestOptions.DEFAULT);
+                    // Create
+                    CreateIndexRequest createIndexRequest = new CreateIndexRequest(index);
+                    createIndexRequest.source(xBuilder);
+                    restHighLevelClient.indices().create(createIndexRequest, RequestOptions.DEFAULT);
 
-					flushIndex(index);
+                    flushIndex(index);
 
-				}
-			}
+                }
+            }
 
-		} catch (IOException e1) {
-			LOGGER.error("Failed to check if index exists", e1);
-		}
-	}
+        } catch (IOException e1) {
+            LOGGER.error("Failed to check if index exists", e1);
+        }
+    }
 
-	public void flushIndex(String index) {
+    public void flushIndex(String index) {
 
-		try {
+        try {
 
-			bulkProcessor.flush();
+            bulkProcessor.flush();
 
-			FlushRequest flushRequest = new FlushRequest(index);
-			flushRequest.force(true);
+            FlushRequest flushRequest = new FlushRequest(index);
+            flushRequest.force(true);
 
-			restHighLevelClient.indices().flush(flushRequest, RequestOptions.DEFAULT);
+            restHighLevelClient.indices().flush(flushRequest, RequestOptions.DEFAULT);
 
-		} catch (IOException e) {
+        } catch (IOException e) {
 
-			e.printStackTrace();
-		}
-	}
+            e.printStackTrace();
+        }
+    }
 
-	public void updateStatus(String url, String index, Status status, SubStatus subStatus, String message) {
+    public void updateStatus(String url, String index, Status status, SubStatus subStatus, String message) {
 
-		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
+        String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
 
-		UpdateRequest updateRequest = new UpdateRequest(index, DOCUMENT_TYPE, id);
+        UpdateRequest updateRequest = new UpdateRequest(index, DOCUMENT_TYPE, id);
 
-		try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
+        try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
 
-			contentBuilder.startObject();
+            contentBuilder.startObject();
 
-			contentBuilder.field(STATUS, status.name());
-			contentBuilder.field(SUB_STATUS, subStatus.name());
-			contentBuilder.field(REASON, message);
-			contentBuilder.endObject();
+            contentBuilder.field(STATUS, status.name());
+            contentBuilder.field(SUB_STATUS, subStatus.name());
+            contentBuilder.field(REASON, message);
+            contentBuilder.endObject();
 
-			updateRequest.doc(contentBuilder);
+            updateRequest.doc(contentBuilder);
 
-			bulkProcessor.add(updateRequest);
+            bulkProcessor.add(updateRequest);
 
-		} catch (IOException e) {
-			LOGGER.error("Failed to update url to index", e);
-		}
+        } catch (IOException e) {
+            LOGGER.error("Failed to update url to index", e);
+        }
 
-	}
+    }
 
-	public void addNewUrl(Result result, String jobId, String index, Status status, SubStatus subStatus, String message) {
+    public void addNewUrl(Result result, String jobId, String index, Status status, SubStatus subStatus, String message) {
 
-		String id = Base64.getEncoder().encodeToString(result.getUrl().replace("https://", "").replace("http://", "").getBytes());
+        String id = Base64.getEncoder().encodeToString(result.getUrl().replace("https://", "").replace("http://", "").getBytes());
 
-		IndexRequest indexRequest = new IndexRequest(index);
-		indexRequest.id(id);
-		indexRequest.type(DOCUMENT_TYPE);
+        IndexRequest indexRequest = new IndexRequest(index);
+        indexRequest.id(id);
+        indexRequest.type(DOCUMENT_TYPE);
 
-		try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
+        try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
 
-			contentBuilder.startObject();
+            contentBuilder.startObject();
 
-			if (result.getContent() != null) {
+            if (result.getContent() != null) {
 
-				if (result.getContentType().contains("html")) {
-					contentBuilder.field(CONTENT, new String(result.getContent()));
-				} else {
-					String content = Base64.getEncoder().encodeToString(result.getContent());
-					contentBuilder.field(CONTENT, content);
-				}
-			}
+                if (result.getContentType().contains("html")) {
+                    contentBuilder.field(CONTENT, new String(result.getContent()));
+                } else {
+                    String content = Base64.getEncoder().encodeToString(result.getContent());
+                    contentBuilder.field(CONTENT, content);
+                }
+            }
 
-			Map<String, List<String>> map = new HashMap<>();
-			result.getHeaders().entrySet().stream().filter(e -> e.getKey() != null && e.getValue() != null).forEach(e -> map.put(e.getKey(), e.getValue()));
+            Map<String, List<String>> map = new HashMap<>();
+            result.getHeaders().entrySet().stream().filter(e -> e.getKey() != null && e.getValue() != null).forEach(e -> map.put(e.getKey(), e.getValue()));
 
-			contentBuilder.field(CODE, result.getCode());
-			contentBuilder.field(CONTENT_TYPE, result.getContentType());
-			contentBuilder.field(CONTENT_SIZE, result.getLength());
-			contentBuilder.field(MESSAGE, result.getMessage());
-			contentBuilder.field(ROOT_URL, result.getRootUrl());
-			contentBuilder.field(URL, result.getUrl());
-			contentBuilder.field(HEADERS, objectMapper.writeValueAsString(map));
-			contentBuilder.field(MODIFIED_DATE, new Date().getTime());
-			contentBuilder.field(STATUS, status.name());
-			contentBuilder.field(SUB_STATUS, subStatus.name());
-			contentBuilder.field(JOB_ID, jobId);
-			contentBuilder.field(REASON, message);
-			contentBuilder.field(ETAG, result.geteTag());
-			contentBuilder.endObject();
+            contentBuilder.field(CODE, result.getCode());
+            contentBuilder.field(CONTENT_TYPE, result.getContentType());
+            contentBuilder.field(CONTENT_SIZE, result.getLength());
+            contentBuilder.field(MESSAGE, result.getMessage());
+            contentBuilder.field(ROOT_URL, result.getRootUrl());
+            contentBuilder.field(URL, result.getUrl());
+            contentBuilder.field(HEADERS, objectMapper.writeValueAsString(map));
+            contentBuilder.field(MODIFIED_DATE, new Date().getTime());
+            contentBuilder.field(STATUS, status.name());
+            contentBuilder.field(SUB_STATUS, subStatus.name());
+            contentBuilder.field(JOB_ID, jobId);
+            contentBuilder.field(REASON, message);
+            contentBuilder.field(ETAG, result.geteTag());
+            contentBuilder.endObject();
 
-			indexRequest.source(contentBuilder);
+            indexRequest.source(contentBuilder);
+            bulkProcessor.add(indexRequest);
 
-			bulkProcessor.add(indexRequest);
+        } catch (IOException e) {
+            LOGGER.error("Failed to addNewUrl to index", e);
+        }
 
-		} catch (IOException e) {
-			LOGGER.error("Failed to addNewUrl to index", e);
-		}
-	}
+        if (result.getRedirectUrls() != null) {
+            result.getRedirectUrls().forEach(currentUrl -> addNewUrl(currentUrl, result.getRootUrl(), jobId, index, status, subStatus, message));
+        }
+    }
 
-	public void addNewUrl(String url, String rootUrl, String jobId, String index, Status status, SubStatus subStatus, String message) throws IOException {
+    public void addNewUrl(String url, String rootUrl, String jobId, String index, Status status, SubStatus subStatus, String message) {
 
-		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
+        String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
 
-		IndexRequest indexRequest = new IndexRequest(index);
-		indexRequest.id(id);
-		indexRequest.type(DOCUMENT_TYPE);
+        IndexRequest indexRequest = new IndexRequest(index);
+        indexRequest.id(id);
+        indexRequest.type(DOCUMENT_TYPE);
 
-		try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
+        try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
 
-			contentBuilder.startObject();
+            contentBuilder.startObject();
 
-			contentBuilder.field(MODIFIED_DATE, new Date().getTime());
-			contentBuilder.field(STATUS, status);
-			contentBuilder.field(SUB_STATUS, subStatus.name());
-			contentBuilder.field(JOB_ID, jobId);
-			contentBuilder.field(REASON, message);
-			contentBuilder.field(ROOT_URL, rootUrl);
-			contentBuilder.field(URL, url);
+            contentBuilder.field(MODIFIED_DATE, new Date().getTime());
+            contentBuilder.field(STATUS, status);
+            contentBuilder.field(SUB_STATUS, subStatus.name());
+            contentBuilder.field(JOB_ID, jobId);
+            contentBuilder.field(REASON, message);
+            contentBuilder.field(ROOT_URL, rootUrl);
+            contentBuilder.field(URL, url);
 
-			contentBuilder.endObject();
+            contentBuilder.endObject();
 
-			indexRequest.source(contentBuilder);
+            indexRequest.source(contentBuilder);
 
-			bulkProcessor.add(indexRequest);
+            bulkProcessor.add(indexRequest);
 
-		} catch (IOException e) {
-			LOGGER.error("Failed to addNewUrl to index", e);
-		}
-	}
+        } catch (IOException e) {
+            LOGGER.error("Failed to addNewUrl to index", e);
+        }
+    }
 
-	public Future<Boolean> getAsyncUrls(String index, List<Result> results, Status status) {
-		return getAsyncUrls(index, results, status, null);
-	}
+    public Future<Boolean> getAsyncUrls(String index, List<Result> results, Status status) {
 
-	public Future<Boolean> getAsyncUrls(String index, List<Result> results, Status status, SubStatus subStatus) {
+        return getAsyncUrls(index, results, status, null);
+    }
 
-		return executor.submit(() -> {
+    public Future<Boolean> getAsyncUrls(String index, List<Result> results, Status status, SubStatus subStatus) {
 
-			try {
+        return executor.submit(() -> {
 
-				SearchRequest searchRequest = new SearchRequest(index);
-				SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+            try {
 
-				BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-				booleanQuery.must().add(QueryBuilders.termQuery(STATUS, status));
+                SearchRequest searchRequest = new SearchRequest(index);
+                SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
 
-				if (subStatus != null) {
-					String subStatusKeyword = SUB_STATUS + ".keyword";
-					booleanQuery.must().add(QueryBuilders.termQuery(subStatusKeyword, subStatus));
-				}
+                BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
+                booleanQuery.must().add(QueryBuilders.termQuery(STATUS, status));
 
-				searchSourceBuilder.query(booleanQuery);
+                if (subStatus != null) {
+                    String subStatusKeyword = SUB_STATUS + ".keyword";
+                    booleanQuery.must().add(QueryBuilders.termQuery(subStatusKeyword, subStatus));
+                }
 
-				searchSourceBuilder.sort(URL, SortOrder.DESC);
-				searchSourceBuilder.size(1);
-				searchRequest.source(searchSourceBuilder);
+                searchSourceBuilder.query(booleanQuery);
 
-				searchRequest.scroll(scroll);
+                searchSourceBuilder.sort(URL, SortOrder.DESC);
+                searchSourceBuilder.size(1);
+                searchRequest.source(searchSourceBuilder);
 
-				SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-				Long countDocuments = 0l;
+                searchRequest.scroll(scroll);
 
-				String scrollId = searchResponse.getScrollId();
-				SearchHit[] searchHits = searchResponse.getHits().getHits();
+                SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+                Long countDocuments = 0l;
 
-				countDocuments = countDocuments + searchHits.length;
+                String scrollId = searchResponse.getScrollId();
+                SearchHit[] searchHits = searchResponse.getHits().getHits();
 
-				while (searchHits != null && searchHits.length > 0) {
+                countDocuments = countDocuments + searchHits.length;
 
-					for (SearchHit searchHit : searchHits) {
-						results.add(mapResult(searchHit));
-					}
+                while (searchHits != null && searchHits.length > 0) {
 
-					while (results.size() > 1000) {
-						LOGGER.debug("{} - {} list is becoming too big, sleeping a bit", index, status);
-						Thread.sleep(1000);
-					}
+                    for (SearchHit searchHit : searchHits) {
+                        results.add(mapResult(searchHit));
+                    }
 
-					SearchScrollRequest scrollRequest = new SearchScrollRequest(scrollId);
-					scrollRequest.scroll(scroll);
-					searchResponse = restHighLevelClient.scroll(scrollRequest, RequestOptions.DEFAULT);
-					scrollId = searchResponse.getScrollId();
-					searchHits = searchResponse.getHits().getHits();
+                    while (results.size() > 1000) {
+                        LOGGER.debug("{} - {} list is becoming too big, sleeping a bit", index, status);
+                        Thread.sleep(1000);
+                    }
 
-					countDocuments = countDocuments + searchHits.length;
-				}
+                    SearchScrollRequest scrollRequest = new SearchScrollRequest(scrollId);
+                    scrollRequest.scroll(scroll);
+                    searchResponse = restHighLevelClient.scroll(scrollRequest, RequestOptions.DEFAULT);
+                    scrollId = searchResponse.getScrollId();
+                    searchHits = searchResponse.getHits().getHits();
 
-				ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
-				clearScrollRequest.addScrollId(scrollId);
-				ClearScrollResponse clearScrollResponse = restHighLevelClient.clearScroll(clearScrollRequest, RequestOptions.DEFAULT);
+                    countDocuments = countDocuments + searchHits.length;
+                }
 
-				return clearScrollResponse.isSucceeded();
+                ClearScrollRequest clearScrollRequest = new ClearScrollRequest();
+                clearScrollRequest.addScrollId(scrollId);
+                ClearScrollResponse clearScrollResponse = restHighLevelClient.clearScroll(clearScrollRequest, RequestOptions.DEFAULT);
 
-			} catch (IOException e) {
-				LOGGER.info("Failed to find next in scroll ", e);
-			}
+                return clearScrollResponse.isSucceeded();
 
-			return false;
-		});
-	}
+            } catch (IOException e) {
+                LOGGER.info("Failed to find next in scroll ", e);
+            }
 
-	private Result mapResult(SearchHit searchHit) throws IOException {
+            return false;
+        });
+    }
 
-		Map<String, Object> source = searchHit.getSourceAsMap();
+    private Result mapResult(SearchHit searchHit) throws IOException {
 
-		Result result = new Result();
+        Map<String, Object> source = searchHit.getSourceAsMap();
 
-		result.setRootUrl((String) source.get(ROOT_URL));
-		result.setUrl((String) source.get(URL));
-		result.setContentType((String) source.get(CONTENT_TYPE));
-		result.setStatus((String) source.get(STATUS));
-		result.setSubStatus((String) source.get(SUB_STATUS));
-		
-		if (result.getContentType() != null) {
+        Result result = new Result();
 
-			String contentTmp = (String) source.get(CONTENT);
+        result.setRootUrl((String) source.get(ROOT_URL));
+        result.setUrl((String) source.get(URL));
+        result.setContentType((String) source.get(CONTENT_TYPE));
+        result.setStatus((String) source.get(STATUS));
+        result.setSubStatus((String) source.get(SUB_STATUS));
 
-			if (contentTmp != null) {
+        if (result.getContentType() != null) {
 
-				if (result.getContentType().contains("html")) {
-					result.setContent(contentTmp.getBytes());
-				} else {
-					byte[] content = Base64.getDecoder().decode(contentTmp.getBytes());
-					result.setContent(content);
-				}
-			}
+            String contentTmp = (String) source.get(CONTENT);
 
-			result.setCode((Integer) source.get(CODE));
-			result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
-			result.setLength((Integer) source.get(CONTENT_SIZE));
-			result.setMessage((String) source.get(MESSAGE));
-			result.seteTag((String) source.get(ETAG));
-			
-		}
+            if (contentTmp != null) {
 
-		return result;
-	}
+                if (result.getContentType().contains("html")) {
+                    result.setContent(contentTmp.getBytes());
+                } else {
+                    byte[] content = Base64.getDecoder().decode(contentTmp.getBytes());
+                    result.setContent(content);
+                }
+            }
 
-	public void addNewChildUrl(String url, String rootUrl, String jobId, String index) {
+            result.setCode((Integer) source.get(CODE));
+            result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
+            result.setLength((Integer) source.get(CONTENT_SIZE));
+            result.setMessage((String) source.get(MESSAGE));
+            result.seteTag((String) source.get(ETAG));
 
-		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
+        }
 
-		GetRequest getRequest = new GetRequest(index);
-		getRequest.id(id);
+        return result;
+    }
 
-		try {
+    public void addNewChildUrl(String url, String rootUrl, String jobId, String index) {
 
-			boolean exists = restHighLevelClient.exists(getRequest, RequestOptions.DEFAULT);
+        String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
 
-			if (exists) {
+        GetRequest getRequest = new GetRequest(index);
+        getRequest.id(id);
 
-				SearchRequest searchRequest = new SearchRequest(index);
-				SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-				sourceBuilder.size(0);
+        try {
 
-				BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-				booleanQuery.must().add(QueryBuilders.termQuery("_id", id));
-				booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
+            boolean exists = restHighLevelClient.exists(getRequest, RequestOptions.DEFAULT);
 
-				sourceBuilder.query(booleanQuery);
-				searchRequest.source(sourceBuilder);
+            if (exists) {
 
-				SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-				boolean documentWithJobIdExist = searchResponse.getHits().getTotalHits() > 0;
+                SearchRequest searchRequest = new SearchRequest(index);
+                SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+                sourceBuilder.size(0);
 
-				if (documentWithJobIdExist) {
-					return;
-				}
+                BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
+                booleanQuery.must().add(QueryBuilders.termQuery("_id", id));
+                booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
 
-			}
+                sourceBuilder.query(booleanQuery);
+                searchRequest.source(sourceBuilder);
 
-			addNewUrl(url, rootUrl, jobId, index, Status.queue, SubStatus.included, "Found on parent page");
+                SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+                boolean documentWithJobIdExist = searchResponse.getHits().getTotalHits() > 0;
 
-		} catch (IOException e1) {
-			LOGGER.error("Failed to check if document exists", e1);
-		}
+                if (documentWithJobIdExist) {
+                    return;
+                }
+                
+                updateStatus(url, index, Status.queue, SubStatus.included, "Found on parent page");
+                return;
 
-	}
+            }
 
-	public Result getFromIndex(String url, String index) throws IOException {
+            addNewUrl(url, rootUrl, jobId, index, Status.queue, SubStatus.included, "Found on parent page");
 
-		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
+        } catch (IOException e1) {
+            LOGGER.error("Failed to check if document exists", e1);
+        }
 
-		SearchRequest searchRequest = new SearchRequest(index);
-		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-		sourceBuilder.size(1);
-		sourceBuilder.query(QueryBuilders.termQuery("_id", id));
+    }
 
-		searchRequest.source(sourceBuilder);
+    public Result getFromIndex(String url, String index) throws IOException {
 
-		SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+        String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
 
-		if (searchResponse.getHits().getTotalHits() > 0) {
+        SearchRequest searchRequest = new SearchRequest(index);
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.size(1);
+        sourceBuilder.query(QueryBuilders.termQuery("_id", id));
 
-			SearchHit searchHit = searchResponse.getHits().getAt(0);
-			Map<String, Object> source = searchHit.getSourceAsMap();
+        searchRequest.source(sourceBuilder);
 
-			Result result = new Result();
-			result.setContentType((String) source.get(CONTENT_TYPE));
+        SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
 
-			String contentTmp = (String) source.get(CONTENT);
+        if (searchResponse.getHits().getTotalHits() > 0) {
 
-			if (contentTmp != null) {
+            SearchHit searchHit = searchResponse.getHits().getAt(0);
+            Map<String, Object> source = searchHit.getSourceAsMap();
 
-				if (result.getContentType().contains("html")) {
-					result.setContent(contentTmp.getBytes());
-				} else {
-					byte[] content = Base64.getDecoder().decode(contentTmp.getBytes());
-					result.setContent(content);
-				}
-			}
+            Result result = new Result();
+            result.setContentType((String) source.get(CONTENT_TYPE));
 
-			result.setCode((Integer) source.get(CODE));
+            String contentTmp = (String) source.get(CONTENT);
 
-			String headerString = (String) source.get(HEADERS);
-			if (headerString != null) {
-				result.setHeaders(objectMapper.readValue(headerString, Map.class));
-			}
+            if (contentTmp != null) {
 
-			result.setLength((Integer) source.get(CONTENT_SIZE));
-			result.setMessage((String) source.get(MESSAGE));
-			result.setRootUrl((String) source.get(ROOT_URL));
-			result.setUrl((String) source.get(URL));
-			result.seteTag((String) source.get(ETAG));
-			
-			return result;
-		}
+                if (result.getContentType().contains("html")) {
+                    result.setContent(contentTmp.getBytes());
+                } else {
+                    byte[] content = Base64.getDecoder().decode(contentTmp.getBytes());
+                    result.setContent(content);
+                }
+            }
 
-		return null;
-	}
+            result.setCode((Integer) source.get(CODE));
 
-	public boolean existsInIndex(String url, String index) throws IOException {
+            String headerString = (String) source.get(HEADERS);
+            if (headerString != null) {
+                result.setHeaders(objectMapper.readValue(headerString, Map.class));
+            }
 
-		String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
+            result.setLength((Integer) source.get(CONTENT_SIZE));
+            result.setMessage((String) source.get(MESSAGE));
+            result.setRootUrl((String) source.get(ROOT_URL));
+            result.setUrl((String) source.get(URL));
+            result.seteTag((String) source.get(ETAG));
 
-		SearchRequest searchRequest = new SearchRequest(index);
-		SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-		sourceBuilder.size(0);
+            return result;
+        }
 
-		sourceBuilder.query(QueryBuilders.termQuery("_id", id));
-		searchRequest.source(sourceBuilder);
+        return null;
+    }
 
-		SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-		return searchResponse.getHits().getTotalHits() > 0;
-	}
+    public boolean existsInIndex(String url, String index) throws IOException {
 
-	public boolean hasMoreItemsInQueued(String index) {
+        String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
 
-		try {
+        SearchRequest searchRequest = new SearchRequest(index);
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.size(0);
 
-			SearchRequest searchRequest = new SearchRequest(index);
-			SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-			sourceBuilder.size(0);
+        sourceBuilder.query(QueryBuilders.termQuery("_id", id));
+        searchRequest.source(sourceBuilder);
 
-			sourceBuilder.query(QueryBuilders.termQuery(STATUS, Status.queue));
-			searchRequest.source(sourceBuilder);
+        SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+        return searchResponse.getHits().getTotalHits() > 0;
+    }
 
-			SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-			return searchResponse.getHits().getTotalHits() > 0;
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+    public boolean hasMoreItemsInQueued(String index) {
 
-		return false;
-	}
+        try {
 
-	public long totalCountWithJobId(String jobId, String index) {
+            SearchRequest searchRequest = new SearchRequest(index);
+            SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+            sourceBuilder.size(0);
 
-		try {
-			SearchRequest searchRequest = new SearchRequest(index);
-			SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
-			sourceBuilder.size(0);
+            sourceBuilder.query(QueryBuilders.termQuery(STATUS, Status.queue));
+            searchRequest.source(sourceBuilder);
 
-			BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
-			booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
-			booleanQuery.must().add(QueryBuilders.termQuery(STATUS, Status.processed));
+            SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+            return searchResponse.getHits().getTotalHits() > 0;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
-			sourceBuilder.query(booleanQuery);
-			searchRequest.source(sourceBuilder);
+        return false;
+    }
 
-			SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-			return searchResponse.getHits().getTotalHits();
+    public long totalCountWithJobId(String jobId, String index) {
 
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+        try {
+            SearchRequest searchRequest = new SearchRequest(index);
+            SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+            sourceBuilder.size(0);
 
-		return 0l;
-	}
+            BoolQueryBuilder booleanQuery = QueryBuilders.boolQuery();
+            booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
+            booleanQuery.must().add(QueryBuilders.termQuery(STATUS, Status.processed));
+            booleanQuery.must().add(QueryBuilders.termQuery(SUB_STATUS, SubStatus.included));
+            
+            sourceBuilder.query(booleanQuery);
+            searchRequest.source(sourceBuilder);
+
+            SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+            return searchResponse.getHits().getTotalHits();
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        return 0l;
+    }
 }

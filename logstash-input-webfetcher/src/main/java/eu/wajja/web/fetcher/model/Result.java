@@ -1,108 +1,143 @@
 package eu.wajja.web.fetcher.model;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class Result {
 
-	private String url;
-	private String rootUrl;
-	private Integer code;
-	private Integer length;
-	private String eTag;
-	private String status;
-	private String subStatus;
-	private String message;
-	private byte[] content;
-	private String contentType;
-	private Map<String, List<String>> headers = new HashMap<>();
+    private String url;
+    private String rootUrl;
+    private Set<String> redirectUrls = new HashSet<>();
+    private Integer code;
+    private Integer length;
+    private String eTag;
+    private String status;
+    private String subStatus;
+    private String message;
+    private byte[] content;
+    private String contentType;
+    private Map<String, List<String>> headers = new HashMap<>();
 
-	public String geteTag() {
-		return eTag;
-	}
+    public Set<String> getRedirectUrls() {
 
-	public String getStatus() {
-		return status;
-	}
+        return redirectUrls;
+    }
 
-	public void setStatus(String status) {
-		this.status = status;
-	}
+    public void setRedirectUrls(Set<String> redirectUrls) {
 
-	public String getSubStatus() {
-		return subStatus;
-	}
+        this.redirectUrls = redirectUrls;
+    }
 
-	public void setSubStatus(String subStatus) {
-		this.subStatus = subStatus;
-	}
+    public String geteTag() {
 
-	public void seteTag(String eTag) {
-		this.eTag = eTag;
-	}
+        return eTag;
+    }
 
-	public String getContentType() {
-		return contentType;
-	}
+    public String getStatus() {
 
-	public void setContentType(String contentType) {
-		this.contentType = contentType;
-	}
+        return status;
+    }
 
-	public String getUrl() {
-		return url;
-	}
+    public void setStatus(String status) {
 
-	public void setUrl(String url) {
-		this.url = url;
-	}
+        this.status = status;
+    }
 
-	public byte[] getContent() {
-		return content;
-	}
+    public String getSubStatus() {
 
-	public void setContent(byte[] content) {
-		this.content = content;
-	}
+        return subStatus;
+    }
 
-	public Map<String, List<String>> getHeaders() {
-		return headers;
-	}
+    public void setSubStatus(String subStatus) {
 
-	public void setHeaders(Map<String, List<String>> headers) {
-		this.headers = headers;
-	}
+        this.subStatus = subStatus;
+    }
 
-	public Integer getCode() {
-		return code;
-	}
+    public void seteTag(String eTag) {
 
-	public void setCode(Integer code) {
-		this.code = code;
-	}
+        this.eTag = eTag;
+    }
 
-	public String getMessage() {
-		return message;
-	}
+    public String getContentType() {
 
-	public void setMessage(String message) {
-		this.message = message;
-	}
+        return contentType;
+    }
 
-	public String getRootUrl() {
-		return rootUrl;
-	}
+    public void setContentType(String contentType) {
 
-	public void setRootUrl(String rootUrl) {
-		this.rootUrl = rootUrl;
-	}
+        this.contentType = contentType;
+    }
 
-	public Integer getLength() {
-		return length;
-	}
+    public String getUrl() {
 
-	public void setLength(Integer length) {
-		this.length = length;
-	}
+        return url;
+    }
+
+    public void setUrl(String url) {
+
+        this.url = url;
+    }
+
+    public byte[] getContent() {
+
+        return content;
+    }
+
+    public void setContent(byte[] content) {
+
+        this.content = content;
+    }
+
+    public Map<String, List<String>> getHeaders() {
+
+        return headers;
+    }
+
+    public void setHeaders(Map<String, List<String>> headers) {
+
+        this.headers = headers;
+    }
+
+    public Integer getCode() {
+
+        return code;
+    }
+
+    public void setCode(Integer code) {
+
+        this.code = code;
+    }
+
+    public String getMessage() {
+
+        return message;
+    }
+
+    public void setMessage(String message) {
+
+        this.message = message;
+    }
+
+    public String getRootUrl() {
+
+        return rootUrl;
+    }
+
+    public void setRootUrl(String rootUrl) {
+
+        this.rootUrl = rootUrl;
+    }
+
+    public Integer getLength() {
+
+        return length;
+    }
+
+    public void setLength(Integer length) {
+
+        this.length = length;
+    }
 }

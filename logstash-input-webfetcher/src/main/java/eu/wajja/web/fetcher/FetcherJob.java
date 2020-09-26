@@ -44,491 +44,494 @@ import eu.wajja.web.fetcher.services.constants.MetadataConstant;
 @DisallowConcurrentExecution
 public class FetcherJob implements Job {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(FetcherJob.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(FetcherJob.class);
 
-	private static final String HTTP = "http://";
-	private static final String HTTPS = "https://";
+    private static final String HTTP = "http://";
+    private static final String HTTPS = "https://";
 
-	private ProxyController proxyController;
+    private ProxyController proxyController;
 
-	private String jobId;
-	private Long maxPages;
-	private List<String> excludedDataRegex;
-	private List<String> excludedLinkRegex;
-	private String crawlerUserAgent;
-	private String rootUrl;
+    private String jobId;
+    private Long maxPages;
+    private List<String> excludedDataRegex;
+    private List<String> excludedLinkRegex;
+    private String crawlerUserAgent;
+    private String rootUrl;
 
-	private ElasticSearchService elasticSearchService;
-	private URLController urlController;
-	private RobotService robotService;
-	private ReindexService reindexService;
-	private ThreadPoolExecutor[] threadPoolExecutors;
-	private int threadCounter = 0;
+    private ElasticSearchService elasticSearchService;
+    private URLController urlController;
+    private RobotService robotService;
+    private ReindexService reindexService;
+    private ThreadPoolExecutor[] threadPoolExecutors;
+    private int threadCounter = 0;
 
-	@SuppressWarnings("unchecked")
-	@Override
-	public void execute(JobExecutionContext context) throws JobExecutionException {
+    @SuppressWarnings("unchecked")
+    @Override
+    public void execute(JobExecutionContext context) throws JobExecutionException {
 
-		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
-		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
-		List<String> initialUrls = (List<String>) dataMap.get(WebFetcher.PROPERTY_URLS);
-		List<String> chromeThreads = (List<String>) dataMap.get(WebFetcher.PROPERTY_CHROME_DRIVERS);
+        JobDataMap dataMap = context.getJobDetail().getJobDataMap();
+        Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
+        List<String> initialUrls = (List<String>) dataMap.get(WebFetcher.PROPERTY_URLS);
+        List<String> chromeThreads = (List<String>) dataMap.get(WebFetcher.PROPERTY_CHROME_DRIVERS);
 
-		jobId = UUID.randomUUID().toString();
+        jobId = UUID.randomUUID().toString();
 
-		this.maxPages = dataMap.getLong(WebFetcher.PROPERTY_MAX_PAGES);
-		this.rootUrl = dataMap.getString(WebFetcher.PROPERTY_ROOT_URL);
-		this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
-		this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
-		this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
+        this.maxPages = dataMap.getLong(WebFetcher.PROPERTY_MAX_PAGES);
+        this.rootUrl = dataMap.getString(WebFetcher.PROPERTY_ROOT_URL);
+        this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
+        this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
+        this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
 
-		String waitForCssSelector = dataMap.getString(WebFetcher.PROPERTY_WAIT_FOR_CSS_SELECTOR);
-		Long maxWaitForCssSelector = dataMap.getLong(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR);
+        String waitForCssSelector = dataMap.getString(WebFetcher.PROPERTY_WAIT_FOR_CSS_SELECTOR);
+        Long maxWaitForCssSelector = dataMap.getLong(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR);
 
-		if (proxyController == null) {
+        if (proxyController == null) {
 
-			proxyController = new ProxyController(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
-					dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
-					dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
-					dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
-					dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
-		}
+            proxyController = new ProxyController(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
+                    dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
+                    dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
+                    dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
+                    dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
+        }
 
-		boolean enableDelete = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_DELETE);
-		boolean enableCrawl = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_CRAWL);
-		boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
-		boolean reindex = dataMap.getBoolean(WebFetcher.PROPERTY_REINDEX);
-		boolean enableRegex = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_REGEX);
+        boolean enableDelete = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_DELETE);
+        boolean enableCrawl = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_CRAWL);
+        boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
+        boolean reindex = dataMap.getBoolean(WebFetcher.PROPERTY_REINDEX);
+        boolean enableRegex = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_REGEX);
 
-		List<String> hostnames = (List<String>) dataMap.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES);
+        List<String> hostnames = (List<String>) dataMap.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES);
 
-		Long proxyPort = proxyController.getProxyPort();
-		String proxyUsername = proxyController.getProxyUser();
-		String proxyPassword = proxyController.getProxyPass();
-		String username = dataMap.getString(WebFetcher.PROPERTY_ELASTIC_USERNAME);
-		String password = dataMap.getString(WebFetcher.PROPERTY_ELASTIC_PASSWORD);
-		String proxyScheme = proxyController.getProxyHost();
-		String proxyHostname = proxyController.getProxyHost();
+        Long proxyPort = proxyController.getProxyPort();
+        String proxyUsername = proxyController.getProxyUser();
+        String proxyPassword = proxyController.getProxyPass();
+        String username = dataMap.getString(WebFetcher.PROPERTY_ELASTIC_USERNAME);
+        String password = dataMap.getString(WebFetcher.PROPERTY_ELASTIC_PASSWORD);
+        String proxyScheme = proxyController.getProxyHost();
+        String proxyHostname = proxyController.getProxyHost();
 
-		elasticSearchService = new ElasticSearchService(hostnames, username, password, proxyScheme, proxyHostname, proxyPort, proxyUsername, proxyPassword);
+        elasticSearchService = new ElasticSearchService(hostnames, username, password, proxyScheme, proxyHostname, proxyPort, proxyUsername, proxyPassword);
 
-		if (urlController == null) {
+        if (urlController == null) {
 
-			urlController = new URLController(
-					elasticSearchService,
-					proxyController.getProxy(),
-					dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT),
-					dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT),
-					dataMap.getString(WebFetcher.PROPERTY_CRAWLER_REFERER),
-					waitForCssSelector,
-					maxWaitForCssSelector.intValue());
+            urlController = new URLController(
+                    elasticSearchService,
+                    proxyController.getProxy(),
+                    dataMap.getLong(WebFetcher.PROPERTY_TIMEOUT),
+                    dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT),
+                    dataMap.getString(WebFetcher.PROPERTY_CRAWLER_REFERER),
+                    waitForCssSelector,
+                    maxWaitForCssSelector.intValue());
 
-		}
+        }
 
-		reindexService = new ReindexService(elasticSearchService, excludedDataRegex, excludedLinkRegex);
-		robotService = new RobotService(urlController, elasticSearchService, readRobot);
+        reindexService = new ReindexService(elasticSearchService, excludedDataRegex, excludedLinkRegex);
+        robotService = new RobotService(urlController, elasticSearchService, readRobot);
 
-		if (threadPoolExecutors == null) {
+        if (threadPoolExecutors == null) {
 
-			threadPoolExecutors = new ThreadPoolExecutor[chromeThreads.size()];
+            threadPoolExecutors = new ThreadPoolExecutor[chromeThreads.size()];
 
-			for (int x = 0; x < chromeThreads.size(); x++) {
-				threadPoolExecutors[x] = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
-			}
-		}
+            for (int x = 0; x < chromeThreads.size(); x++) {
+                threadPoolExecutors[x] = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
+            }
+        }
 
-		initialUrls.stream().map(i -> getUrlString(i, i)).forEach(initialUrl -> {
+        initialUrls.stream().map(i -> getUrlString(i, i)).forEach(initialUrl -> {
 
-			String id = Base64.getEncoder().encodeToString(initialUrl.getBytes()).replace("/", "_");
-			String index = "logstash_web_fetcher_" + id.toLowerCase();
-			elasticSearchService.checkIndex(index);
+            String id = Base64.getEncoder().encodeToString(initialUrl.getBytes()).replace("/", "_");
+            String index = "logstash_web_fetcher_" + id.toLowerCase();
+            elasticSearchService.checkIndex(index);
 
-			if (enableRegex) {
+            if (enableRegex) {
 
-				// Here we rerun though all the completed pages, check the regexes are correct
-				reRunRegexExclusions(initialUrl, index);
-			}
+                // Here we rerun though all the completed pages, check the
+                // regexes are correct
+                reRunRegexExclusions(initialUrl, index);
+            }
 
-			if (reindex) {
-				reindexService.reIndex(consumer, jobId, initialUrl, index);
-				elasticSearchService.flushIndex(index);
+            if (reindex) {
+                reindexService.reIndex(consumer, jobId, initialUrl, index);
+                elasticSearchService.flushIndex(index);
 
-			}
+            }
 
-			if (enableCrawl) {
+            if (enableCrawl) {
 
-				// Read the robot.txt first
-				robotService.checkRobot(chromeThreads.get(0), initialUrl, index, jobId);
+                // Read the robot.txt first
+                robotService.checkRobot(chromeThreads.get(0), initialUrl, index, jobId);
 
-				// Start the actual fetch
-				fetchNewItems(consumer, chromeThreads, initialUrl, index);
-				elasticSearchService.flushIndex(index);
+                // Start the actual fetch
+                fetchNewItems(consumer, chromeThreads, initialUrl, index);
+                elasticSearchService.flushIndex(index);
 
-			}
+            }
 
-			if (enableDelete) {
-				// Deleting all the old items
-				deleteOldItems(consumer, initialUrl, index);
-			}
+            if (enableDelete) {
+                // Deleting all the old items
+                deleteOldItems(consumer, initialUrl, index);
+            }
 
-		});
+        });
 
-		LOGGER.info("Finished Thread {}", jobId);
+        LOGGER.info("Finished Thread {}", jobId);
 
-	}
+    }
 
-	private void fetchNewItems(Consumer<Map<String, Object>> consumer, List<String> chromeThreads, String initialUrl, String index) {
+    private void fetchNewItems(Consumer<Map<String, Object>> consumer, List<String> chromeThreads, String initialUrl, String index) {
 
-		LOGGER.info("Starting fetching items for thread : {}, url : {}", jobId, initialUrl);
+        LOGGER.info("Starting fetching items for thread : {}, url : {}", jobId, initialUrl);
 
-		extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(0), index, true);
+        extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(0), index, true);
 
-		try {
+        try {
 
-			// TODO : The index doesn't have the time to flush. so nothing is found in the
-			// next step. fix this at some point
-			Thread.sleep(1000);
+            // TODO : The index doesn't have the time to flush. so nothing is
+            // found in the
+            // next step. fix this at some point
+            Thread.sleep(1000);
 
-			LinkedList<Result> results = new LinkedList<>();
-			Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.queue);
+            LinkedList<Result> results = new LinkedList<>();
+            Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.queue);
 
-			while (!future.isDone()) {
+            while (!future.isDone()) {
 
-				while (!results.isEmpty()) {
-					addNewThread(results.pop(), chromeThreads, consumer, index, true);
-				}
+                while (!results.isEmpty()) {
+                    addNewThread(results.pop(), chromeThreads, consumer, index, true);
+                }
 
-				waitForThreads(initialUrl, 100);
-			}
+                waitForThreads(initialUrl, 100);
+            }
 
-			while (!results.isEmpty()) {
-				addNewThread(results.pop(), chromeThreads, consumer, index, true);
-			}
+            while (!results.isEmpty()) {
+                addNewThread(results.pop(), chromeThreads, consumer, index, true);
+            }
 
-			waitForThreads(initialUrl);
+            waitForThreads(initialUrl);
 
-			if (maxPages == 0 || elasticSearchService.totalCountWithJobId(jobId, index) >= maxPages) {
-				return;
-			}
+            if (maxPages == 0 || elasticSearchService.totalCountWithJobId(jobId, index) >= maxPages) {
+                return;
+            }
 
-			if (elasticSearchService.hasMoreItemsInQueued(index)) {
-				fetchNewItems(consumer, chromeThreads, initialUrl, index);
-			}
+            if (elasticSearchService.hasMoreItemsInQueued(index)) {
+                fetchNewItems(consumer, chromeThreads, initialUrl, index);
+            }
 
-		} catch (InterruptedException e) {
-			LOGGER.info("InterruptedException", e);
-			Thread.currentThread().interrupt();
-		}
+        } catch (InterruptedException e) {
+            LOGGER.info("InterruptedException", e);
+            Thread.currentThread().interrupt();
+        }
 
-		LOGGER.info("Finished fetching items for thread : {}, url : {}", jobId, initialUrl);
+        LOGGER.info("Finished fetching items for thread : {}, url : {}", jobId, initialUrl);
 
-	}
+    }
 
-	private void addNewThread(Result result, List<String> chromeThreads, Consumer<Map<String, Object>> consumer, String index, boolean checkChildren) {
+    private void addNewThread(Result result, List<String> chromeThreads, Consumer<Map<String, Object>> consumer, String index, boolean checkChildren) {
 
-		String driver = chromeThreads.get(threadCounter);
-		String resultUrl = result.getUrl();
-		String resultRootUrl = result.getRootUrl();
+        String driver = chromeThreads.get(threadCounter);
+        String resultUrl = result.getUrl();
+        String resultRootUrl = result.getRootUrl();
 
-		threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, resultUrl, resultRootUrl, driver, index, checkChildren));
+        threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, resultUrl, resultRootUrl, driver, index, checkChildren));
 
-		if ((chromeThreads.size() - 1) == threadCounter) {
-			threadCounter = 0;
-		} else {
-			threadCounter++;
-		}
-	}
+        if ((chromeThreads.size() - 1) == threadCounter) {
+            threadCounter = 0;
+        } else {
+            threadCounter++;
+        }
+    }
 
-	private void waitForThreads(String initialUrl) {
-		waitForThreads(initialUrl, 0);
+    private void waitForThreads(String initialUrl) {
 
-	}
+        waitForThreads(initialUrl, 0);
 
-	private void waitForThreads(String initialUrl, Integer maxThreads) {
+    }
 
-		for (int x = 0; x < threadPoolExecutors.length; x++) {
+    private void waitForThreads(String initialUrl, Integer maxThreads) {
 
-			int y = 0;
+        for (int x = 0; x < threadPoolExecutors.length; x++) {
 
-			while (threadPoolExecutors[x].getActiveCount() > maxThreads) {
+            int y = 0;
 
-				y++;
+            while (threadPoolExecutors[x].getActiveCount() > maxThreads) {
 
-				try {
-					Thread.sleep(3000);
-				} catch (InterruptedException e) {
-					LOGGER.error("Failed to sleep in thread", e);
-					Thread.currentThread().interrupt();
-				}
+                y++;
 
-				if (y > 300) {
-					LOGGER.info("Waiting for site {} to be finished, active threads left {}", initialUrl, threadPoolExecutors[x].getActiveCount());
-				}
-			}
-		}
+                try {
+                    Thread.sleep(3000);
+                } catch (InterruptedException e) {
+                    LOGGER.error("Failed to sleep in thread", e);
+                    Thread.currentThread().interrupt();
+                }
 
-	}
+                if (y > 300) {
+                    LOGGER.info("Waiting for site {} to be finished, active threads left {}", initialUrl, threadPoolExecutors[x].getActiveCount());
+                }
+            }
+        }
 
-	private void extractUrl(Consumer<Map<String, Object>> consumer, String urlTmp, String rootUrlTmp, String chromeDriver, String index, boolean checkChildren) {
+    }
 
-		String baseUrl = (this.rootUrl != null) ? this.rootUrl : rootUrlTmp;
-		String url = getUrlString(urlTmp, baseUrl);
+    private void extractUrl(Consumer<Map<String, Object>> consumer, String urlTmp, String rootUrlTmp, String chromeDriver, String index, boolean checkChildren) {
 
-		LOGGER.info("Processing jobId {} url {}", url, jobId);
+        String baseUrl = (this.rootUrl != null) ? this.rootUrl : rootUrlTmp;
+        String url = getUrlString(urlTmp, baseUrl);
 
-		try {
+        LOGGER.info("Processing jobId {} url {}", jobId, url);
 
-			if (maxPages == 0 || elasticSearchService.totalCountWithJobId(jobId, index) >= maxPages) {
+        try {
 
-				// check if we dont have too many pages
-				LOGGER.info("Reached max pages for jobId {} = {}/{}", jobId, elasticSearchService.totalCountWithJobId(jobId, index), maxPages);
+            if (maxPages == 0 || elasticSearchService.totalCountWithJobId(jobId, index) >= maxPages) {
 
-			} else if (!robotService.isAllowed(url, rootUrl, index, jobId, crawlerUserAgent)) {
+                // check if we dont have too many pages
+                LOGGER.info("Reached max pages for jobId {} = {}/{}", jobId, elasticSearchService.totalCountWithJobId(jobId, index), maxPages);
 
-				// Check if robot allows url
-				elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "robot dissallowed");
+            } else if (!robotService.isAllowed(url, rootUrl, index, jobId, crawlerUserAgent)) {
 
-			} else if (excludedLinkRegex.stream().anyMatch(ex -> url.matches(ex))) {
+                // Check if robot allows url
+                elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "robot dissallowed");
 
-				// Exclude if link is not allowed
-				elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex");
+            } else if (excludedLinkRegex.stream().anyMatch(ex -> url.matches(ex))) {
 
-			} else {
+                // Exclude if link is not allowed
+                elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex");
 
-				// we have to fetch the data to continue here
+            } else {
 
-				Result result = urlController.getURL(index, url, baseUrl, chromeDriver);
+                // we have to fetch the data to continue here
 
-				if (result == null || result.getContent() == null) {
+                Result result = urlController.getURL(index, url, baseUrl, chromeDriver);
 
-					// content is empty
-					elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "content is empty");
+                if (result == null || result.getContent() == null) {
 
-				} else if (result.getCode() != 200) {
+                    // content is empty
+                    elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "content is empty");
 
-					// Exclude if data is not allowed
-					elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, result.getCode().toString());
+                } else if (result.getCode() != 200) {
 
-				} else if (excludedDataRegex.stream().anyMatch(ex -> result.getUrl().matches(ex))) {
+                    // Exclude if data is not allowed
+                    elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, result.getCode().toString());
 
-					// Exclude if data is not allowed
+                } else if (excludedDataRegex.stream().anyMatch(ex -> result.getUrl().matches(ex))) {
 
-					List<String> excluded = excludedDataRegex.stream().filter(ex -> result.getUrl().matches(ex)).collect(Collectors.toList());
-					LOGGER.info("Excluding url {} because it matched data regex {}", result.getUrl(), excluded);
+                    // Exclude if data is not allowed
 
-					elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.excluded, "excludedDataRegex");
+                    List<String> excluded = excludedDataRegex.stream().filter(ex -> result.getUrl().matches(ex)).collect(Collectors.toList());
+                    LOGGER.info("Excluding url {} because it matched data regex {}", result.getUrl(), excluded);
 
-				} else {
+                    elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.excluded, "excludedDataRegex");
 
-					LOGGER.info("Sending url {}", result.getUrl());
+                } else {
 
-					Map<String, Object> metadata = new HashMap<>();
-					metadata.put(MetadataConstant.METADATA_URL, result.getUrl());
-					metadata.put(MetadataConstant.METADATA_INDEX, index);
-					metadata.put(MetadataConstant.METADATA_CONTENT_TYPE, result.getContentType());
-					metadata.put(MetadataConstant.METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
-					metadata.put(MetadataConstant.METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
-					metadata.put(MetadataConstant.METADATA_UUID, UUID.randomUUID().toString());
-					metadata.put(MetadataConstant.METADATA_STATUS, 200);
-					metadata.put(MetadataConstant.METADATA_CONTEXT, result.getRootUrl());
-					metadata.put(MetadataConstant.METADATA_COMMAND, Command.ADD.toString());
-					metadata.put(MetadataConstant.METADATA_CONTENT, Base64.getEncoder().encodeToString(result.getContent()));
+                    LOGGER.info("Sending url {}", result.getUrl());
 
-					consumer.accept(metadata);
+                    Map<String, Object> metadata = new HashMap<>();
+                    metadata.put(MetadataConstant.METADATA_URL, result.getUrl());
+                    metadata.put(MetadataConstant.METADATA_INDEX, index);
+                    metadata.put(MetadataConstant.METADATA_CONTENT_TYPE, result.getContentType());
+                    metadata.put(MetadataConstant.METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
+                    metadata.put(MetadataConstant.METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
+                    metadata.put(MetadataConstant.METADATA_UUID, UUID.randomUUID().toString());
+                    metadata.put(MetadataConstant.METADATA_STATUS, 200);
+                    metadata.put(MetadataConstant.METADATA_CONTEXT, baseUrl);
+                    metadata.put(MetadataConstant.METADATA_COMMAND, Command.ADD.toString());
+                    metadata.put(MetadataConstant.METADATA_CONTENT, Base64.getEncoder().encodeToString(result.getContent()));
 
-					elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.included, "Document sent to filter");
-				}
+                    consumer.accept(metadata);
 
-				if (checkChildren && result != null && result.getContent() != null) {
+                    elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.included, "Document sent to filter");
+                }
 
-					Map<String, List<String>> headers = result.getHeaders();
+                if (checkChildren && result != null && result.getContent() != null) {
 
-					if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
+                    Map<String, List<String>> headers = result.getHeaders();
 
-						String bodyHtml = IOUtils.toString(result.getContent(), StandardCharsets.UTF_8.name());
-						org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
-						Elements elements = document.getElementsByAttribute("href");
+                    if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
 
-						String simpleUrlString = result.getRootUrl().replace(HTTP, "").replace(HTTPS, "");
+                        String bodyHtml = IOUtils.toString(result.getContent(), StandardCharsets.UTF_8.name());
+                        org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
+                        Elements elements = document.getElementsByAttribute("href");
 
-						Set<String> includedChildPages = elements.stream().map(e -> e.attr("href"))
-								.filter(href -> !href.equals("/") && !href.startsWith("//"))
-								.map(urlStream -> getUrlString(urlStream, result.getRootUrl()))
-								.filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
-								.filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
-								.filter(href -> !excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
-								.sorted()
-								.collect(Collectors.toSet());
+                        String simpleUrlString = baseUrl.replace(HTTP, "").replace(HTTPS, "");
 
-						includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, baseUrl, jobId, index));
-					}
-				}
+                        Set<String> includedChildPages = elements.stream().map(e -> e.attr("href"))
+                                .filter(href -> !href.equals("/") && !href.startsWith("//"))
+                                .map(urlStream -> getUrlString(urlStream, baseUrl))
+                                .filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
+                                .filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
+                                .filter(href -> !excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
+                                .sorted()
+                                .collect(Collectors.toSet());
 
-				elasticSearchService.flushIndex(index);
+                        includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, baseUrl, jobId, index));
+                    }
+                }
 
-			}
+                elasticSearchService.flushIndex(index);
 
-		} catch (Exception e) {
-			LOGGER.error("Failed to retrieve URL from thread {}, url {}", jobId, url, e);
-		}
+            }
 
-	}
+        } catch (Exception e) {
+            LOGGER.error("Failed to retrieve URL from thread {}, url {}", jobId, url, e);
+        }
 
-	private String getUrlString(String urlString, String rootUrl) {
+    }
 
-		urlString = urlString.trim();
+    private String getUrlString(String urlString, String rootUrl) {
 
-		try {
-			if (!urlString.startsWith("http") && urlString.startsWith("/")) {
+        urlString = urlString.trim();
 
-				URL urlRoot = new URL(rootUrl);
-				String path = urlRoot.getPath();
+        try {
+            if (!urlString.startsWith("http") && urlString.startsWith("/")) {
 
-				if (StringUtils.isEmpty(path) || path.equals("/")) {
+                URL urlRoot = new URL(rootUrl);
+                String path = urlRoot.getPath();
 
-					if (urlRoot.toString().endsWith("/") && urlString.startsWith("/")) {
-						urlString = urlRoot + urlString.substring(1);
-					} else {
-						urlString = urlRoot + urlString;
-					}
+                if (StringUtils.isEmpty(path) || path.equals("/")) {
 
-				} else {
-					urlString = rootUrl.replace(path, "") + urlString;
-				}
+                    if (urlRoot.toString().endsWith("/") && urlString.startsWith("/")) {
+                        urlString = urlRoot + urlString.substring(1);
+                    } else {
+                        urlString = urlRoot + urlString;
+                    }
 
-			} else if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
+                } else {
+                    urlString = rootUrl.replace(path, "") + urlString;
+                }
 
-				URL urlRoot = new URL(rootUrl);
-				String path = urlRoot.getPath();
+            } else if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
 
-				if (StringUtils.isEmpty(path) || path.equals("/")) {
+                URL urlRoot = new URL(rootUrl);
+                String path = urlRoot.getPath();
 
-					urlString = urlRoot + "/" + urlString;
-				} else {
-					urlString = urlRoot.toString().substring(0, urlRoot.toString().lastIndexOf('/') + 1) + urlString;
-				}
-			}
+                if (StringUtils.isEmpty(path) || path.equals("/")) {
 
-			if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
-				urlString = rootUrl + urlString;
-			}
+                    urlString = urlRoot + "/" + urlString;
+                } else {
+                    urlString = urlRoot.toString().substring(0, urlRoot.toString().lastIndexOf('/') + 1) + urlString;
+                }
+            }
 
-			if (urlString.contains("#")) {
-				urlString = urlString.substring(0, urlString.indexOf("#") - 1);
-			}
+            if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
+                urlString = rootUrl + urlString;
+            }
 
-		} catch (MalformedURLException e) {
-			LOGGER.error("Failed to parse url {}", urlString, e);
-		}
+            if (urlString.contains("#")) {
+                urlString = urlString.substring(0, urlString.indexOf("#") - 1);
+            }
 
-		return urlString;
-	}
+        } catch (MalformedURLException e) {
+            LOGGER.error("Failed to parse url {}", urlString, e);
+        }
 
-	private void reRunRegexExclusions(String initialUrl, String index) {
+        return urlString;
+    }
 
-		LOGGER.info("Starting regexes items for thread : {}, url : {}", jobId, initialUrl);
+    private void reRunRegexExclusions(String initialUrl, String index) {
 
-		LinkedList<Result> results = new LinkedList<>();
-		Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.processed);
+        LOGGER.info("Starting regexes items for thread : {}, url : {}", jobId, initialUrl);
 
-		while (!future.isDone()) {
+        LinkedList<Result> results = new LinkedList<>();
+        Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.processed);
 
-			while (!results.isEmpty()) {
+        while (!future.isDone()) {
 
-				Result result = results.pop();
-				checkStatus(index, result);
+            while (!results.isEmpty()) {
 
-			}
-		}
+                Result result = results.pop();
+                checkStatus(index, result);
 
-		while (!results.isEmpty()) {
+            }
+        }
 
-			Result result = results.pop();
-			checkStatus(index, result);
-		}
+        while (!results.isEmpty()) {
 
-		LOGGER.info("Finished regexes items for thread : {}, url : {}", jobId, initialUrl);
+            Result result = results.pop();
+            checkStatus(index, result);
+        }
 
-	}
+        LOGGER.info("Finished regexes items for thread : {}, url : {}", jobId, initialUrl);
 
-	private void checkStatus(String index, Result result) {
+    }
 
-		SubStatus subStatus = null;
+    private void checkStatus(String index, Result result) {
 
-		if (result.getSubStatus() != null) {
-			subStatus = SubStatus.valueOf(result.getSubStatus());
-		}
+        SubStatus subStatus = null;
 
-		String href = getUrlString(result.getUrl(), result.getRootUrl());
+        if (result.getSubStatus() != null) {
+            subStatus = SubStatus.valueOf(result.getSubStatus());
+        }
 
-		List<String> linkExcluded = excludedLinkRegex.parallelStream().filter(ex -> href.matches(ex)).collect(Collectors.toList());
-		List<String> dataExcluded = excludedDataRegex.parallelStream().filter(ex -> href.matches(ex)).collect(Collectors.toList());
+        String href = getUrlString(result.getUrl(), result.getRootUrl());
 
-		if (!linkExcluded.isEmpty()) {
+        List<String> linkExcluded = excludedLinkRegex.parallelStream().filter(ex -> href.matches(ex)).collect(Collectors.toList());
+        List<String> dataExcluded = excludedDataRegex.parallelStream().filter(ex -> href.matches(ex)).collect(Collectors.toList());
 
-			LOGGER.info("excluded link regex for url {}, regex {}", result.getUrl(), linkExcluded);
+        if (!linkExcluded.isEmpty()) {
 
-			// Exclude from processed
-			if (subStatus == null || subStatus.equals(SubStatus.included)) {
-				elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex");
-			}
+            LOGGER.info("excluded link regex for url {}, regex {}", result.getUrl(), linkExcluded);
 
-		} else if (!dataExcluded.isEmpty()) {
+            // Exclude from processed
+            if (subStatus == null || subStatus.equals(SubStatus.included)) {
+                elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex");
+            }
 
-			LOGGER.info("excluded data regex for url {}, regex {}", result.getUrl(), dataExcluded);
+        } else if (!dataExcluded.isEmpty()) {
 
-			// Exclude from processed
-			if (subStatus == null || subStatus.equals(SubStatus.included)) {
-				elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.excluded, "regex excludedDataRegex");
-			}
+            LOGGER.info("excluded data regex for url {}, regex {}", result.getUrl(), dataExcluded);
 
-		} else {
+            // Exclude from processed
+            if (subStatus == null || subStatus.equals(SubStatus.included)) {
+                elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.excluded, "regex excludedDataRegex");
+            }
 
-			LOGGER.info("regex enabled for url {}", result.getUrl());
+        } else {
 
-			// Include from processed
-			if (subStatus == null || subStatus.equals(SubStatus.excluded)) {
-				elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.included, "Document sent to filter");
-			}
-		}
-	}
+            LOGGER.info("regex enabled for url {}", result.getUrl());
 
-	private void deleteOldItems(Consumer<Map<String, Object>> consumer, String initialUrl, String index) {
+            // Include from processed
+            if (subStatus == null || subStatus.equals(SubStatus.excluded)) {
+                elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.included, "Document sent to filter");
+            }
+        }
+    }
 
-		LOGGER.info("Starting deleting items for thread : {}, url : {}", jobId, initialUrl);
+    private void deleteOldItems(Consumer<Map<String, Object>> consumer, String initialUrl, String index) {
 
-		LinkedList<Result> results = new LinkedList<>();
-		Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.processed, SubStatus.excluded);
+        LOGGER.info("Starting deleting items for thread : {}, url : {}", jobId, initialUrl);
 
-		while (!future.isDone()) {
+        LinkedList<Result> results = new LinkedList<>();
+        Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.processed, SubStatus.excluded);
 
-			while (!results.isEmpty()) {
+        while (!future.isDone()) {
 
-				Result result = results.pop();
-				deleteResult(consumer, result);
-			}
-		}
+            while (!results.isEmpty()) {
 
-		while (!results.isEmpty()) {
+                Result result = results.pop();
+                deleteResult(consumer, result);
+            }
+        }
 
-			Result result = results.pop();
-			deleteResult(consumer, result);
+        while (!results.isEmpty()) {
 
-		}
+            Result result = results.pop();
+            deleteResult(consumer, result);
 
-		LOGGER.info("Finished deleting items for thread : {}, url : {}", jobId, initialUrl);
+        }
 
-	}
+        LOGGER.info("Finished deleting items for thread : {}, url : {}", jobId, initialUrl);
 
-	private void deleteResult(Consumer<Map<String, Object>> consumer, Result result) {
+    }
 
-		String reference = Base64.getEncoder().encodeToString(result.getUrl().getBytes());
+    private void deleteResult(Consumer<Map<String, Object>> consumer, Result result) {
 
-		Map<String, Object> metadata = new HashMap<>();
-		metadata.put(MetadataConstant.METADATA_REFERENCE, reference);
-		metadata.put(MetadataConstant.METADATA_COMMAND, Command.DELETE.toString());
+        String reference = Base64.getEncoder().encodeToString(result.getUrl().getBytes());
 
-		consumer.accept(metadata);
+        Map<String, Object> metadata = new HashMap<>();
+        metadata.put(MetadataConstant.METADATA_REFERENCE, reference);
+        metadata.put(MetadataConstant.METADATA_COMMAND, Command.DELETE.toString());
+
+        consumer.accept(metadata);
 
         LOGGER.info("Deleting item for thread : {}, url : {}", jobId, result.getUrl());
     }
