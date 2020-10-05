@@ -64,6 +64,7 @@ public class FetcherJob implements Job {
     private ReindexService reindexService;
     private ThreadPoolExecutor[] threadPoolExecutors;
     private int threadCounter = 0;
+    private Long sleep;
 
     @SuppressWarnings("unchecked")
     @Override
@@ -81,6 +82,7 @@ public class FetcherJob implements Job {
         this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
         this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
         this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
+        this.sleep = dataMap.getLong(WebFetcher.PROPERTY_SLEEP);
 
         String waitForCssSelector = dataMap.getString(WebFetcher.PROPERTY_WAIT_FOR_CSS_SELECTOR);
         Long maxWaitForCssSelector = dataMap.getLong(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR);
@@ -301,6 +303,7 @@ public class FetcherJob implements Job {
                 // we have to fetch the data to continue here
 
                 Result result = urlController.getURL(index, url, baseUrl, chromeDriver);
+                Thread.sleep(sleep);
 
                 if (result == null || result.getContent() == null) {
 

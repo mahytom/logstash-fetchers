@@ -51,6 +51,7 @@ public class WebFetcher implements Input {
     protected static final String PROPERTY_PROXY_USER = "proxyUser";
     protected static final String PROPERTY_PROXY_PASS = "proxyPass";
     protected static final String PROPERTY_CRON = "cron";
+    protected static final String PROPERTY_SLEEP = "sleep";
     protected static final String PROPERTY_CONSUMER = "consumer";
     protected static final String PROPERTY_CHROME_DRIVERS = "chromeDrivers";
     protected static final String PROPERTY_CRAWLER_USER_AGENT = "crawlerUserAgent";
@@ -99,7 +100,8 @@ public class WebFetcher implements Input {
 
     public static final PluginConfigSpec<String> CONFIG_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.stringSetting(PROPERTY_WAIT_FOR_CSS_SELECTOR);
     public static final PluginConfigSpec<Long> CONFIG_MAX_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.numSetting(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, 30);
-
+    public static final PluginConfigSpec<Long> CONFIG_SLEEP = PluginConfigSpec.numSetting(PROPERTY_SLEEP, 1);
+    
     private final CountDownLatch done = new CountDownLatch(1);
     protected volatile boolean stopped;
 
@@ -148,7 +150,8 @@ public class WebFetcher implements Input {
         jobDataMap.put(PROPERTY_ENABLE_CRAWL, config.get(CONFIG_ENABLE_CRAWL));
         jobDataMap.put(PROPERTY_ENABLE_DELETE, config.get(CONFIG_ENABLE_DELETE));
         jobDataMap.put(PROPERTY_ENABLE_REGEX, config.get(CONFIG_ENABLE_REGEX));
-
+        jobDataMap.put(PROPERTY_SLEEP, config.get(CONFIG_SLEEP));
+        
         this.threadId = id;
         this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
         this.cron = config.get(CONFIG_CRON);
@@ -238,7 +241,8 @@ public class WebFetcher implements Input {
                 CONFIG_CHROME_DRIVERS,
                 CONFIG_WAIT_FOR_CSS_SELECTOR,
                 CONFIG_ROOT_URL,
-                CONFIG_REINDEX,
+                CONFIG_REINDEX, 
+                CONFIG_SLEEP,
                 CONFIG_ELASTIC_HOSTNAMES,
                 CONFIG_ELASTIC_USERNAME,
                 CONFIG_ELASTIC_PASSWORD,
