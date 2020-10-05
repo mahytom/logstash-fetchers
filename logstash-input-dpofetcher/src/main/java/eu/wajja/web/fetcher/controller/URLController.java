@@ -135,7 +135,7 @@ public class URLController {
 
             LOGGER.warn("Thread url {}, SSLException error, sleeping and trying again", currentUrl, e);
             closeConnection(httpURLConnection);
-            return result;
+            return getURL(index, currentUrl, initialUrl, chromeDriver, isJson);
 
         } catch (MalformedURLException mue) {
             LOGGER.error("Malformed url : {}", currentUrl, mue);
