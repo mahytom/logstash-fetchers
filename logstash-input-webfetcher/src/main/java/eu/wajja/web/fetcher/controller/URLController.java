@@ -45,10 +45,10 @@ public class URLController {
 
     public Result getURL(String index, String currentUrl, String initialUrl, String chromeDriver) {
 
-        return getURL(index, currentUrl, initialUrl, chromeDriver, new HashSet<>());
+        return getURL(index, currentUrl, initialUrl, chromeDriver, new HashSet<>(), 0);
     }
 
-    private Result getURL(String index, String currentUrl, String initialUrl, String chromeDriver, Set<String> redirectUrls) {
+    private Result getURL(String index, String currentUrl, String initialUrl, String chromeDriver, Set<String> redirectUrls, Integer redirectCount) {
 
         Result result = new Result();
         result.setUrl(currentUrl);
@@ -90,7 +90,7 @@ public class URLController {
 
                     result = elasticSearchService.getFromIndex(currentUrl, index);
                     result.setRedirectUrls(redirectUrls);
-                    
+
                     if (isSameDocument(httpURLConnection, result)) {
                         return result;
                     }
@@ -118,8 +118,14 @@ public class URLController {
 
                     closeConnection(httpURLConnection);
                     result.setHeaders(httpURLConnection.getHeaderFields());
-                    byte[] bytes = webDriverController.getURL(result.getUrl(), chromeDriver, waitForCssSelector, maxWaitForCssSelector);
-                    result.setContent(bytes);
+
+                    if (chromeDriver == null) {
+                        result.setContent(downloadContent(currentUrl));
+                    } else {
+                        byte[] bytes = webDriverController.getURL(result.getUrl(), chromeDriver, waitForCssSelector, maxWaitForCssSelector);
+                        result.setContent(bytes);
+                    }
+
                 }
 
             } else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == HttpURLConnection.HTTP_SEE_OTHER) {
@@ -127,12 +133,22 @@ public class URLController {
                 String newUrl = httpURLConnection.getHeaderField("Location");
                 closeConnection(httpURLConnection);
 
-                LOGGER.debug("Redirect needed to :  {}", newUrl);
-                result.getRedirectUrls().add(currentUrl);
-                return getURL(index, newUrl, initialUrl, chromeDriver, result.getRedirectUrls());
+                if (redirectCount < 10) {
+
+                    LOGGER.debug("Redirect needed to :  {}", newUrl);
+                    result.getRedirectUrls().add(currentUrl);
+                    return getURL(index, newUrl, initialUrl, chromeDriver, result.getRedirectUrls(), redirectCount + 1);
+                }
 
             } else {
                 LOGGER.warn("Failed To Read status {}, url {}, message {}", code, url, message);
+
+                if (redirectCount < 10 && code == 502) {
+
+                    // Bad Gateway, sleep and try again
+                    Thread.sleep(5000);
+                    return getURL(index, currentUrl, initialUrl, chromeDriver, redirectUrls, redirectCount + 1);
+                }
             }
 
         } catch (SocketTimeoutException e) {
@@ -220,7 +236,10 @@ public class URLController {
             httpURLConnection.connect();
 
             try (InputStream inputStream = httpURLConnection.getInputStream()) {
-                return IOUtils.toByteArray(inputStream);
+
+                byte[] bytes = IOUtils.toByteArray(inputStream);
+                closeConnection(httpURLConnection);
+                return bytes;
             }
 
         } catch (SocketTimeoutException e) {

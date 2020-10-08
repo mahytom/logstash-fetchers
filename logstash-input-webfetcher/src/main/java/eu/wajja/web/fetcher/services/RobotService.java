@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
 import java.util.Set;
@@ -22,136 +23,137 @@ import eu.wajja.web.fetcher.model.Result;
 
 public class RobotService {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(ReindexService.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ReindexService.class);
 
-	private static final String ROBOTS = "robots.txt";
-	private Map<String, Set<String>> disallowedLocations = new HashMap<>();
-	private Map<String, Set<String>> allowedLocations = new HashMap<>();
-	private Map<String, Set<String>> sitemapLocations = new HashMap<>();
+    private static final String ROBOTS = "robots.txt";
+    private Map<String, Set<String>> disallowedLocations = new HashMap<>();
+    private Map<String, Set<String>> allowedLocations = new HashMap<>();
+    private Map<String, Set<String>> sitemapLocations = new HashMap<>();
 
-	private URLController urlController;
-	private ElasticSearchService elasticSearchService;
-	private boolean readRobot;
+    private URLController urlController;
+    private ElasticSearchService elasticSearchService;
+    private boolean readRobot;
 
-	public RobotService(URLController urlController, ElasticSearchService elasticSearchService, boolean readRobot) {
-		this.urlController = urlController;
-		this.elasticSearchService = elasticSearchService;
-		this.readRobot = readRobot;
-	}
+    public RobotService(URLController urlController, ElasticSearchService elasticSearchService, boolean readRobot) {
 
-	public void checkRobot(String chromeThread, String url, String index, String jobId) {
+        this.urlController = urlController;
+        this.elasticSearchService = elasticSearchService;
+        this.readRobot = readRobot;
+    }
 
-		if (readRobot) {
+    public void checkRobot(List<String> chromeThreads, String url, String index, String jobId) {
 
-			LOGGER.info("Reading Robot : {}, url : {}", jobId, url);
+        if (readRobot) {
 
-			Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
-			Matcher m = p.matcher(url);
+            LOGGER.info("Reading Robot : {}, url : {}", jobId, url);
 
-			if (m.find()) {
-				String robotUrl = m.group(0) + ROBOTS;
-				readRobot(index, url, robotUrl, chromeThread, jobId);
+            Pattern p = Pattern.compile("(http).*(\\/\\/)[^\\/]{2,}(\\/)");
+            Matcher m = p.matcher(url);
 
-			} else {
-				LOGGER.warn("Failed to find robot.txt url {}", url);
-			}
+            if (m.find()) {
+                String robotUrl = m.group(0) + ROBOTS;
+                readRobot(index, url, robotUrl, chromeThreads, jobId);
 
-			LOGGER.info("Finished Reading Robot : {}, url : {}", jobId, url);
+            } else {
+                LOGGER.warn("Failed to find robot.txt url {}", url);
+            }
 
-		}
-	}
+            LOGGER.info("Finished Reading Robot : {}, url : {}", jobId, url);
 
-	private void readRobot(String index, String initialUrl, String robotUrl, String chromeDriver, String jobId) {
+        }
+    }
 
-		Result result = urlController.getURL(index, robotUrl, initialUrl, chromeDriver);
+    private void readRobot(String index, String initialUrl, String robotUrl, List<String> chromeThreads, String jobId) {
 
-		if (result != null && result.getContent() != null) {
+        Result result = urlController.getURL(index, robotUrl, initialUrl, chromeThreads.stream().findFirst().orElse(null));
 
-			try (Scanner scanner = new Scanner(IOUtils.toString(result.getContent(), StandardCharsets.UTF_8.name()))) {
+        if (result != null && result.getContent() != null) {
 
-				elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.excluded, "robot read");
-				String userAgent = "*";
+            try (Scanner scanner = new Scanner(IOUtils.toString(result.getContent(), StandardCharsets.UTF_8.name()))) {
 
-				while (scanner.hasNextLine()) {
+                elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.excluded, "robot read");
+                String userAgent = "*";
 
-					String line = scanner.nextLine().trim();
+                while (scanner.hasNextLine()) {
 
-					if (!line.startsWith("#") && !line.isEmpty()) {
+                    String line = scanner.nextLine().trim();
 
-						if (line.startsWith("User-agent:")) {
-							userAgent = line.replace("User-agent:", "").trim();
+                    if (!line.startsWith("#") && !line.isEmpty()) {
 
-						} else if (line.startsWith("Disallow:")) {
+                        if (line.startsWith("User-agent:")) {
+                            userAgent = line.replace("User-agent:", "").trim();
 
-							String perm = line.replace("Disallow:", "").trim();
+                        } else if (line.startsWith("Disallow:")) {
 
-							if (!disallowedLocations.containsKey(userAgent)) {
-								disallowedLocations.put(userAgent, new HashSet<>());
-							}
+                            String perm = line.replace("Disallow:", "").trim();
 
-							disallowedLocations.get(userAgent).add(perm);
+                            if (!disallowedLocations.containsKey(userAgent)) {
+                                disallowedLocations.put(userAgent, new HashSet<>());
+                            }
 
-						} else if (line.startsWith("Allow:")) {
+                            disallowedLocations.get(userAgent).add(perm);
 
-							String perm = line.replace("Allow:", "").trim();
+                        } else if (line.startsWith("Allow:")) {
 
-							if (!allowedLocations.containsKey(userAgent)) {
-								allowedLocations.put(userAgent, new HashSet<>());
-							}
+                            String perm = line.replace("Allow:", "").trim();
 
-							allowedLocations.get(userAgent).add(perm);
+                            if (!allowedLocations.containsKey(userAgent)) {
+                                allowedLocations.put(userAgent, new HashSet<>());
+                            }
 
-						} else if (line.startsWith("Sitemap:")) {
+                            allowedLocations.get(userAgent).add(perm);
 
-							String perm = line.replace("Sitemap:", "").trim();
+                        } else if (line.startsWith("Sitemap:")) {
 
-							if (!sitemapLocations.containsKey(userAgent)) {
-								sitemapLocations.put(userAgent, new HashSet<>());
-							}
+                            String perm = line.replace("Sitemap:", "").trim();
 
-							sitemapLocations.get(userAgent).add(perm);
-						}
-					}
-				}
+                            if (!sitemapLocations.containsKey(userAgent)) {
+                                sitemapLocations.put(userAgent, new HashSet<>());
+                            }
 
-			} catch (Exception e) {
-				LOGGER.error("Failed to parse robots.txt from url {}", robotUrl, e);
-			}
+                            sitemapLocations.get(userAgent).add(perm);
+                        }
+                    }
+                }
 
-		} else {
-			LOGGER.warn("Failed to read robot.txt url, status {}", initialUrl);
-		}
-	}
+            } catch (Exception e) {
+                LOGGER.error("Failed to parse robots.txt from url {}", robotUrl, e);
+            }
 
-	public boolean isAllowed(String urlString, String rootUrl, String index, String jobId, String crawlerUserAgent) throws IOException {
+        } else {
+            LOGGER.warn("Failed to read robot.txt url, status {}", initialUrl);
+        }
+    }
 
-		if (readRobot) {
+    public boolean isAllowed(String urlString, String rootUrl, String index, String jobId, String crawlerUserAgent) throws IOException {
 
-			Set<String> disallowedList = new HashSet<>();
+        if (readRobot) {
 
-			if (disallowedLocations.containsKey("*")) {
-				disallowedList = disallowedLocations.get("*");
-			}
+            Set<String> disallowedList = new HashSet<>();
 
-			if (disallowedLocations.containsKey(crawlerUserAgent)) {
-				disallowedList.addAll(disallowedLocations.get(crawlerUserAgent));
-			}
+            if (disallowedLocations.containsKey("*")) {
+                disallowedList = disallowedLocations.get("*");
+            }
 
-			if (!disallowedList.isEmpty()) {
+            if (disallowedLocations.containsKey(crawlerUserAgent)) {
+                disallowedList.addAll(disallowedLocations.get(crawlerUserAgent));
+            }
 
-				String regex = (".*(" + String.join(")|(", disallowedList).replace("*", ".*").replace("/", "\\/") + ").*").trim();
-				Pattern p = Pattern.compile(regex);
-				Matcher m = p.matcher(urlString);
+            if (!disallowedList.isEmpty()) {
 
-				if (m.find()) {
-					LOGGER.info("URL {} is dissallowed", urlString);
-					elasticSearchService.addNewUrl(urlString, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "excluded by robot");
-					return false;
-				}
-			}
-		}
+                String regex = (".*(" + String.join(")|(", disallowedList).replace("*", ".*").replace("/", "\\/") + ").*").trim();
+                Pattern p = Pattern.compile(regex);
+                Matcher m = p.matcher(urlString);
 
-		return true;
-	}
+                if (m.find()) {
+                    LOGGER.info("URL {} is dissallowed", urlString);
+                    elasticSearchService.addNewUrl(urlString, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "excluded by robot");
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
 
 }

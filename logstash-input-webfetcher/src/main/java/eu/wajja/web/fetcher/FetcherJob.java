@@ -1,12 +1,17 @@
 package eu.wajja.web.fetcher;
 
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -17,6 +22,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
@@ -29,6 +37,9 @@ import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.w3c.dom.Document;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
 import eu.wajja.web.fetcher.controller.ProxyController;
 import eu.wajja.web.fetcher.controller.URLController;
@@ -49,12 +60,15 @@ public class FetcherJob implements Job {
     private static final String HTTP = "http://";
     private static final String HTTPS = "https://";
 
+    private DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+
     private ProxyController proxyController;
 
     private String jobId;
     private Long maxPages;
     private List<String> excludedDataRegex;
     private List<String> excludedLinkRegex;
+    private List<String> includedLinkRegex;
     private String crawlerUserAgent;
     private String rootUrl;
 
@@ -65,6 +79,7 @@ public class FetcherJob implements Job {
     private ThreadPoolExecutor[] threadPoolExecutors;
     private int threadCounter = 0;
     private Long sleep;
+    private boolean enableHashtag;
 
     @SuppressWarnings("unchecked")
     @Override
@@ -81,8 +96,10 @@ public class FetcherJob implements Job {
         this.rootUrl = dataMap.getString(WebFetcher.PROPERTY_ROOT_URL);
         this.excludedDataRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
         this.excludedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
+        this.includedLinkRegex = (List<String>) dataMap.get(WebFetcher.PROPERTY_INCLUDE_LINK);
         this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
         this.sleep = dataMap.getLong(WebFetcher.PROPERTY_SLEEP);
+        this.enableHashtag = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_HASHTAG);
 
         String waitForCssSelector = dataMap.getString(WebFetcher.PROPERTY_WAIT_FOR_CSS_SELECTOR);
         Long maxWaitForCssSelector = dataMap.getLong(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR);
@@ -132,14 +149,22 @@ public class FetcherJob implements Job {
 
         if (threadPoolExecutors == null) {
 
-            threadPoolExecutors = new ThreadPoolExecutor[chromeThreads.size()];
+            if (chromeThreads.isEmpty()) {
 
-            for (int x = 0; x < chromeThreads.size(); x++) {
-                threadPoolExecutors[x] = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
+                threadPoolExecutors = new ThreadPoolExecutor[1];
+                threadPoolExecutors[0] = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
+
+            } else {
+
+                threadPoolExecutors = new ThreadPoolExecutor[chromeThreads.size()];
+
+                for (int x = 0; x < chromeThreads.size(); x++) {
+                    threadPoolExecutors[x] = (ThreadPoolExecutor) Executors.newFixedThreadPool(1);
+                }
             }
         }
 
-        initialUrls.stream().map(i -> getUrlString(i, i)).forEach(initialUrl -> {
+        initialUrls.stream().map(i -> getUrlString(i, i, i)).forEach(initialUrl -> {
 
             String id = Base64.getEncoder().encodeToString(initialUrl.getBytes()).replace("/", "_");
             String index = "logstash_web_fetcher_" + id.toLowerCase();
@@ -161,7 +186,7 @@ public class FetcherJob implements Job {
             if (enableCrawl) {
 
                 // Read the robot.txt first
-                robotService.checkRobot(chromeThreads.get(0), initialUrl, index, jobId);
+                robotService.checkRobot(chromeThreads, initialUrl, index, jobId);
 
                 // Start the actual fetch
                 fetchNewItems(consumer, chromeThreads, initialUrl, index);
@@ -184,7 +209,8 @@ public class FetcherJob implements Job {
 
         LOGGER.info("Starting fetching items for thread : {}, url : {}", jobId, initialUrl);
 
-        extractUrl(consumer, initialUrl, initialUrl, chromeThreads.get(0), index, true);
+        String chromeDriver = chromeThreads.stream().findFirst().orElse(null);
+        extractUrl(consumer, initialUrl, initialUrl, chromeDriver, index, true);
 
         try {
 
@@ -230,16 +256,24 @@ public class FetcherJob implements Job {
 
     private void addNewThread(Result result, List<String> chromeThreads, Consumer<Map<String, Object>> consumer, String index, boolean checkChildren) {
 
-        String driver = chromeThreads.get(threadCounter);
         String resultUrl = result.getUrl();
         String resultRootUrl = result.getRootUrl();
 
-        threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, resultUrl, resultRootUrl, driver, index, checkChildren));
+        if (chromeThreads.isEmpty()) {
 
-        if ((chromeThreads.size() - 1) == threadCounter) {
-            threadCounter = 0;
+            threadPoolExecutors[0].execute(() -> extractUrl(consumer, resultUrl, resultRootUrl, null, index, checkChildren));
+
         } else {
-            threadCounter++;
+
+            String driver = chromeThreads.get(threadCounter);
+
+            threadPoolExecutors[threadCounter].execute(() -> extractUrl(consumer, resultUrl, resultRootUrl, driver, index, checkChildren));
+
+            if ((chromeThreads.size() - 1) == threadCounter) {
+                threadCounter = 0;
+            } else {
+                threadCounter++;
+            }
         }
     }
 
@@ -277,7 +311,7 @@ public class FetcherJob implements Job {
     private void extractUrl(Consumer<Map<String, Object>> consumer, String urlTmp, String rootUrlTmp, String chromeDriver, String index, boolean checkChildren) {
 
         String baseUrl = (this.rootUrl != null) ? this.rootUrl : rootUrlTmp;
-        String url = getUrlString(urlTmp, baseUrl);
+        String url = getUrlString(urlTmp, baseUrl, baseUrl);
 
         LOGGER.info("Processing jobId {} url {}", jobId, url);
 
@@ -348,6 +382,7 @@ public class FetcherJob implements Job {
                 if (checkChildren && result != null && result.getContent() != null) {
 
                     Map<String, List<String>> headers = result.getHeaders();
+                    Set<String> includedChildPages = new HashSet<>();
 
                     if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
 
@@ -355,19 +390,41 @@ public class FetcherJob implements Job {
                         org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
                         Elements elements = document.getElementsByAttribute("href");
 
-                        String simpleUrlString = baseUrl.replace(HTTP, "").replace(HTTPS, "");
+                        includedChildPages = elements.stream().map(e -> e.attr("href")).collect(Collectors.toSet());
 
-                        Set<String> includedChildPages = elements.stream().map(e -> e.attr("href"))
-                                .filter(href -> !href.equals("/") && !href.startsWith("//"))
-                                .map(urlStream -> getUrlString(urlStream, baseUrl))
-                                .filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
-                                .filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString))
-                                .filter(href -> !excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
-                                .sorted()
-                                .collect(Collectors.toSet());
+                    } else if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("xml")) {
 
-                        includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, baseUrl, jobId, index));
+                        try (InputStream inputStream = new ByteArrayInputStream(result.getContent())) {
+
+                            DocumentBuilder builder = factory.newDocumentBuilder();
+                            Document doc = builder.parse(inputStream);
+
+                            NodeList nodeList = doc.getElementsByTagName("link");
+
+                            for (int x = 0; nodeList.getLength() > x; x++) {
+
+                                Node node = nodeList.item(x);
+                                includedChildPages.add(node.getTextContent());
+                            }
+
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to parse xml", e);
+                        }
+
                     }
+
+                    String simpleUrlString = baseUrl.replace(HTTP, "").replace(HTTPS, "");
+
+                    includedChildPages = includedChildPages.stream()
+                            .filter(href -> !href.equals("/") && !href.startsWith("//"))
+                            .map(urlStream -> getUrlString(urlStream, result.getUrl(), baseUrl))
+                            .filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
+                            .filter(href -> href.startsWith(HTTP + simpleUrlString) || href.startsWith(HTTPS + simpleUrlString) || includedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
+                            .filter(href -> !excludedLinkRegex.stream().anyMatch(ex -> href.matches(ex)))
+                            .sorted()
+                            .collect(Collectors.toSet());
+
+                    includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, baseUrl, jobId, index));
                 }
 
                 elasticSearchService.flushIndex(index);
@@ -380,7 +437,7 @@ public class FetcherJob implements Job {
 
     }
 
-    private String getUrlString(String urlString, String rootUrl) {
+    private String getUrlString(String urlString, String parentUrl, String rootUrl) {
 
         urlString = urlString.trim();
 
@@ -411,7 +468,7 @@ public class FetcherJob implements Job {
 
                     urlString = urlRoot + "/" + urlString;
                 } else {
-                    urlString = urlRoot.toString().substring(0, urlRoot.toString().lastIndexOf('/') + 1) + urlString;
+                    urlString = parentUrl.substring(0, parentUrl.lastIndexOf('/') + 1) + urlString;
                 }
             }
 
@@ -419,12 +476,18 @@ public class FetcherJob implements Job {
                 urlString = rootUrl + urlString;
             }
 
-            if (urlString.contains("#")) {
+            if (!enableHashtag && urlString.contains("#")) {
                 urlString = urlString.substring(0, urlString.indexOf("#") - 1);
             }
 
         } catch (MalformedURLException e) {
             LOGGER.error("Failed to parse url {}", urlString, e);
+        }
+
+        try {
+            return new URI(urlString).normalize().toString();
+        } catch (URISyntaxException e) {
+            LOGGER.warn("Failed to normalize url {}", urlString);
         }
 
         return urlString;
@@ -465,7 +528,7 @@ public class FetcherJob implements Job {
             subStatus = SubStatus.valueOf(result.getSubStatus());
         }
 
-        String href = getUrlString(result.getUrl(), result.getRootUrl());
+        String href = getUrlString(result.getUrl(), result.getRootUrl(), result.getRootUrl());
 
         List<String> linkExcluded = excludedLinkRegex.parallelStream().filter(ex -> href.matches(ex)).collect(Collectors.toList());
         List<String> dataExcluded = excludedDataRegex.parallelStream().filter(ex -> href.matches(ex)).collect(Collectors.toList());

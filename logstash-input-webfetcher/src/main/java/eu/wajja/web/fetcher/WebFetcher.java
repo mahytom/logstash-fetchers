@@ -41,6 +41,7 @@ public class WebFetcher implements Input {
     protected static final String PROPERTY_URLS = "urls";
     protected static final String PROPERTY_EXCLUDE_DATA = "excludeData";
     protected static final String PROPERTY_EXCLUDE_LINK = "excludeLink";
+    protected static final String PROPERTY_INCLUDE_LINK = "includeLink";
     protected static final String PROPERTY_TIMEOUT = "timeout";
     protected static final String PROPERTY_MAX_DEPTH = "maxdepth";
     protected static final String PROPERTY_MAX_PAGES = "maxpages";
@@ -64,7 +65,8 @@ public class WebFetcher implements Input {
     protected static final String PROPERTY_ENABLE_CRAWL = "enableCrawl";
     protected static final String PROPERTY_ENABLE_DELETE = "enableDelete";
     protected static final String PROPERTY_ENABLE_REGEX = "enableRegex";
-
+    protected static final String PROPERTY_ENABLE_HASHTAG = "enableHashtag";
+    
     protected static final String PROPERTY_ELASTIC_HOSTNAMES = "elasticsearchHostnames";
     protected static final String PROPERTY_ELASTIC_USERNAME = "elasticsearchUsername";
     protected static final String PROPERTY_ELASTIC_PASSWORD = "elasticsearchPassword";
@@ -74,10 +76,12 @@ public class WebFetcher implements Input {
     public static final PluginConfigSpec<List<Object>> CONFIG_URLS = PluginConfigSpec.arraySetting(PROPERTY_URLS);
     public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE_DATA = PluginConfigSpec.arraySetting(PROPERTY_EXCLUDE_DATA, new ArrayList<>(), false, false);
     public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE_LINK = PluginConfigSpec.arraySetting(PROPERTY_EXCLUDE_LINK, new ArrayList<>(), false, false);
+    public static final PluginConfigSpec<List<Object>> CONFIG_INCLUDE_LINK = PluginConfigSpec.arraySetting(PROPERTY_INCLUDE_LINK, new ArrayList<>(), false, false);
     public static final PluginConfigSpec<Long> CONFIG_TIMEOUT = PluginConfigSpec.numSetting(PROPERTY_TIMEOUT, 8000);
     public static final PluginConfigSpec<Long> CONFIG_MAX_DEPTH = PluginConfigSpec.numSetting(PROPERTY_MAX_DEPTH, 0);
     public static final PluginConfigSpec<Long> CONFIG_MAX_PAGES = PluginConfigSpec.numSetting(PROPERTY_MAX_PAGES, 1000);
     public static final PluginConfigSpec<Boolean> CONFIG_DISABLE_SSL_CHECK = PluginConfigSpec.booleanSetting(PROPERTY_SSL_CHECK, true);
+    public static final PluginConfigSpec<Boolean> CONFIG_ENABLE_HASHTAG = PluginConfigSpec.booleanSetting(PROPERTY_ENABLE_HASHTAG, false);
     public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting(PROPERTY_REFRESH_INTERVAL, 86400l);
     public static final PluginConfigSpec<String> CONFIG_PROXY_HOST = PluginConfigSpec.stringSetting(PROPERTY_PROXY_HOST);
     public static final PluginConfigSpec<Long> CONFIG_PROXY_PORT = PluginConfigSpec.numSetting(PROPERTY_PROXY_PORT, 80);
@@ -126,6 +130,7 @@ public class WebFetcher implements Input {
 
         jobDataMap.put(PROPERTY_EXCLUDE_DATA, config.get(CONFIG_EXCLUDE_DATA).stream().map(url -> (String) url).collect(Collectors.toList()));
         jobDataMap.put(PROPERTY_EXCLUDE_LINK, config.get(CONFIG_EXCLUDE_LINK).stream().map(url -> (String) url).collect(Collectors.toList()));
+        jobDataMap.put(PROPERTY_INCLUDE_LINK, config.get(CONFIG_INCLUDE_LINK).stream().map(url -> (String) url).collect(Collectors.toList()));
         jobDataMap.put(PROPERTY_MAX_DEPTH, config.get(CONFIG_MAX_DEPTH));
         jobDataMap.put(PROPERTY_MAX_PAGES, config.get(CONFIG_MAX_PAGES));
         jobDataMap.put(PROPERTY_TIMEOUT, config.get(CONFIG_TIMEOUT));
@@ -134,7 +139,8 @@ public class WebFetcher implements Input {
         jobDataMap.put(PROPERTY_CRAWLER_USER_AGENT, config.get(CONFIG_CRAWLER_USER_AGENT));
         jobDataMap.put(PROPERTY_READ_ROBOT, config.get(CONFIG_READ_ROBOT));
         jobDataMap.put(PROPERTY_ROOT_URL, config.get(CONFIG_ROOT_URL));
-
+        jobDataMap.put(PROPERTY_ENABLE_HASHTAG, config.get(CONFIG_ENABLE_HASHTAG));
+        
         jobDataMap.put(PROPERTY_PROXY_HOST, config.get(CONFIG_PROXY_HOST));
         jobDataMap.put(PROPERTY_PROXY_PORT, config.get(CONFIG_PROXY_PORT));
         jobDataMap.put(PROPERTY_PROXY_USER, config.get(CONFIG_PROXY_USER));
@@ -226,6 +232,7 @@ public class WebFetcher implements Input {
                 CONFIG_DISABLE_SSL_CHECK,
                 CONFIG_EXCLUDE_DATA,
                 CONFIG_EXCLUDE_LINK,
+                CONFIG_INCLUDE_LINK,
                 CONFIG_REFRESH_INTERVAL,
                 CONFIG_PROXY_HOST,
                 CONFIG_PROXY_PASS,
