@@ -64,556 +64,571 @@ import eu.wajja.input.fetcher.utils.UrlHelper;
 
 public class ConfluenceDataFetcher implements Job {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(ConfluenceDataFetcher.class);
-
-	private static final String PREFIX_PAGE = "/pages/viewpage.action?pageId=";
-	private static final String PREFIX_SPACE = "/display/";
-	private static final String PREFIX_ATTACHMENT = "/download/attachments/";
-
-	private static final String METADATA_TITLE = "title";
-	private static final String METADATA_PAGE_NAME = "pageName";
-	private static final String METADATA_FILE_NAME = "fileName";
-	private static final String METADATA_REFERENCE = "reference";
-	private static final String METADATA_CONTENT = "content";
-	private static final String METADATA_URL = "url";
-	private static final String METADATA_STATUS = "status";
-	private static final String METADATA_COMMAND = "command";
-	private static final String METADATA_CONTENT_TYPE = "contentType";
-
-	private static final String METADATA_FETCHED_DATE = "fetchedDate";
-	private static final String METADATA_MODIFIED_DATE = "modifiedDate";
-	private static final String METADATA_MODIFIED_USER = "modifiedBy";
-
-	private static final String METADATA_ACL_USERS = "aclUsers";
-	private static final String METADATA_ACL_GROUPS = "aclGroups";
-
-	private static final String METADATA_SPACE_ID = "spaceId";
-	private static final String METADATA_SPACE_NAME = "spaceName";
-	private static final String METADATA_SPACE_URL = "spaceUrl";
-
-	private static final String METADATA_PARENT_ID = "parentId";
-	private static final String METADATA_PARENT_NAME = "parentName";
-	private static final String METADATA_PARENT_URL = "parentUrl";
-
-	private static final String LOGGER_REFERENCE = "reference";
-	private static final String LOGGER_STATUS = "status";
-	private static final String LOGGER_URL = "url";
-	private static final String LOGGER_ACTION = "action";
-	private static final String LOGGER_SPACE = "space";
-	private static final String LOGGER_INCLUDE_DATA = "include_data";
-	private static final String LOGGER_EXCLUDE_DATA = "exclude_data";
-
-	private static final String FETCHED_DATA_FOLDER = "/fetched-data/";
-
-	private ObjectMapper objectMapper = new ObjectMapper();
-	private UrlHelper urlHelper = new UrlHelper();
-
-	private Expansion expansionDescendants = new Expansion("descendants");
-	private Expansion expansionChildren = new Expansion("children.links");
-	private Expansion expansionBody = new Expansion("body.storage");
-	private Expansion expansionMetadata = new Expansion("metadata");
-	private Expansion expansionVersion = new Expansion("version");
-	private Expansion expansionContainer = new Expansion("container");
-	private Expansion expansionAnscestors = new Expansion("ancestors");
-	private Expansion expansionPermissions = new Expansion("permissions");
-
-	private RemoteSpaceServiceImpl remoteSpaceServiceImpl;
-	private RemoteContentServiceImpl remoteContentServiceImpl;
-	private RemoteContentRestrictionServiceImpl remoteContentRestrictionServiceImpl;
-	private RemoteAttachmentServiceImpl remoteAttachmentServiceImpl;
-
-	private List<String> dataAttachmentsInclude;
-	private List<String> dataAttachmentsExclude;
-	private Long dataAttachmentsMaxSize;
-	private List<String> dataPageExclude;
-	private Long batchSize;
-	private String dataFolder;
-	private ThreadPoolExecutor executorService;
-	private Long threads;
-	private Long sleep;
-	
-	@SuppressWarnings("unchecked")
-	@Override
-	public void execute(JobExecutionContext context) throws JobExecutionException {
-
-		JobDataMap dataMap = context.getJobDetail().getJobDataMap();
-
-		Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get("consumer");
-
-		String username = dataMap.getString("username");
-		String password = dataMap.getString("password");
-		String url = dataMap.getString(METADATA_URL);
-
-		this.remoteSpaceServiceImpl = (RemoteSpaceServiceImpl) dataMap.get("remoteSpaceServiceImpl");
-		this.remoteContentServiceImpl = (RemoteContentServiceImpl) dataMap.get("remoteContentServiceImpl");
-		this.remoteContentRestrictionServiceImpl = (RemoteContentRestrictionServiceImpl) dataMap.get("remoteContentRestrictionServiceImpl");
-		this.remoteAttachmentServiceImpl = (RemoteAttachmentServiceImpl) dataMap.get("remoteAttachmentServiceImpl");
-
-		this.dataAttachmentsInclude = (List<String>) dataMap.getOrDefault("dataAttachmentsInclude", new ArrayList<>());
-		this.dataAttachmentsExclude = (List<String>) dataMap.getOrDefault("dataAttachmentsExclude", new ArrayList<>());
-		this.dataAttachmentsMaxSize = (Long) dataMap.get("dataAttachmentsMaxSize");
-		this.dataPageExclude = (List<String>) dataMap.getOrDefault("dataPageExclude", new ArrayList<>());
-		this.batchSize = (Long) dataMap.getOrDefault("batchSize", 10l);
-		this.dataFolder = dataMap.getString("dataFolder");
-		this.sleep = (Long) dataMap.get("sleep");
-		
-		this.threads = (Long) dataMap.get("dataSyncThreadSize");
-		this.executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
-
-		/** Get spaces and start reading from them **/
-
-		List<String> dataSpaceExclude = (List<String>) dataMap.getOrDefault("dataSpaceExclude", new ArrayList<>());
-		List<String> spacesToCrawl = (List<String>) dataMap.getOrDefault("sites", new ArrayList<>());
-		List<Space> spaces = getSpaces(spacesToCrawl);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ConfluenceDataFetcher.class);
+
+    private static final String PREFIX_PAGE = "/pages/viewpage.action?pageId=";
+    private static final String PREFIX_SPACE = "/display/";
+    private static final String PREFIX_ATTACHMENT = "/download/attachments/";
+
+    private static final String METADATA_TITLE = "title";
+    private static final String METADATA_PAGE_NAME = "pageName";
+    private static final String METADATA_FILE_NAME = "fileName";
+    private static final String METADATA_REFERENCE = "reference";
+    private static final String METADATA_CONTENT = "content";
+    private static final String METADATA_URL = "url";
+    private static final String METADATA_STATUS = "status";
+    private static final String METADATA_COMMAND = "command";
+    private static final String METADATA_CONTENT_TYPE = "contentType";
+
+    private static final String METADATA_FETCHED_DATE = "fetchedDate";
+    private static final String METADATA_MODIFIED_DATE = "modifiedDate";
+    private static final String METADATA_MODIFIED_USER = "modifiedBy";
+
+    private static final String METADATA_ACL_USERS = "aclUsers";
+    private static final String METADATA_ACL_GROUPS = "aclGroups";
+
+    private static final String METADATA_SPACE_ID = "spaceId";
+    private static final String METADATA_SPACE_NAME = "spaceName";
+    private static final String METADATA_SPACE_URL = "spaceUrl";
+
+    private static final String METADATA_PARENT_ID = "parentId";
+    private static final String METADATA_PARENT_NAME = "parentName";
+    private static final String METADATA_PARENT_URL = "parentUrl";
+
+    private static final String LOGGER_REFERENCE = "reference";
+    private static final String LOGGER_STATUS = "status";
+    private static final String LOGGER_URL = "url";
+    private static final String LOGGER_ACTION = "action";
+    private static final String LOGGER_SPACE = "space";
+    private static final String LOGGER_INCLUDE_DATA = "include_data";
+    private static final String LOGGER_EXCLUDE_DATA = "exclude_data";
+
+    private static final String FETCHED_DATA_FOLDER = "/fetched-data/";
+
+    private ObjectMapper objectMapper = new ObjectMapper();
+    private UrlHelper urlHelper = new UrlHelper();
+
+    private Expansion expansionDescendants = new Expansion("descendants");
+    private Expansion expansionChildren = new Expansion("children.links");
+    private Expansion expansionBody = new Expansion("body.storage");
+    private Expansion expansionMetadata = new Expansion("metadata");
+    private Expansion expansionVersion = new Expansion("version");
+    private Expansion expansionContainer = new Expansion("container");
+    private Expansion expansionAnscestors = new Expansion("ancestors");
+    private Expansion expansionPermissions = new Expansion("permissions");
+
+    private RemoteSpaceServiceImpl remoteSpaceServiceImpl;
+    private RemoteContentServiceImpl remoteContentServiceImpl;
+    private RemoteContentRestrictionServiceImpl remoteContentRestrictionServiceImpl;
+    private RemoteAttachmentServiceImpl remoteAttachmentServiceImpl;
+
+    private List<String> dataAttachmentsInclude;
+    private List<String> dataAttachmentsExclude;
+    private Long dataAttachmentsMaxSize;
+    private List<String> dataPageExclude;
+    private Long batchSize;
+    private String dataFolder;
+    private ThreadPoolExecutor executorService;
+    private Long threads;
+    private Long sleep;
+
+    @SuppressWarnings("unchecked")
+    @Override
+    public void execute(JobExecutionContext context) throws JobExecutionException {
+
+        LOGGER.info("Starting confluence data fetcher");
+
+        JobDataMap dataMap = context.getJobDetail().getJobDataMap();
 
-		spaces.stream().forEach(space -> {
+        Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get("consumer");
 
-			try {
-				List<String> spacePermissions = new ArrayList<>();
+        String username = dataMap.getString("username");
+        String password = dataMap.getString("password");
+        String url = dataMap.getString(METADATA_URL);
 
-				if (dataMap.containsKey("soapService") && dataMap.containsKey("soapToken")) {
+        this.remoteSpaceServiceImpl = (RemoteSpaceServiceImpl) dataMap.get("remoteSpaceServiceImpl");
+        this.remoteContentServiceImpl = (RemoteContentServiceImpl) dataMap.get("remoteContentServiceImpl");
+        this.remoteContentRestrictionServiceImpl = (RemoteContentRestrictionServiceImpl) dataMap.get("remoteContentRestrictionServiceImpl");
+        this.remoteAttachmentServiceImpl = (RemoteAttachmentServiceImpl) dataMap.get("remoteAttachmentServiceImpl");
 
-					ConfluenceSoapService soapService = (ConfluenceSoapService) dataMap.get("soapService");
-					String soapToken = dataMap.getString("soapToken");
+        this.dataAttachmentsInclude = (List<String>) dataMap.getOrDefault("dataAttachmentsInclude", new ArrayList<>());
+        this.dataAttachmentsExclude = (List<String>) dataMap.getOrDefault("dataAttachmentsExclude", new ArrayList<>());
+        this.dataAttachmentsMaxSize = (Long) dataMap.get("dataAttachmentsMaxSize");
+        this.dataPageExclude = (List<String>) dataMap.getOrDefault("dataPageExclude", new ArrayList<>());
+        this.batchSize = (Long) dataMap.getOrDefault("batchSize", 10l);
+        this.dataFolder = dataMap.getString("dataFolder");
+        this.sleep = (Long) dataMap.get("sleep");
 
-					RemoteSpacePermissionSet remoteSpacePermissionSet = soapService.getSpacePermissionSet(soapToken, space.getKey(), "VIEWSPACE");
-					RemoteContentPermission[] remoteContentPermissions = remoteSpacePermissionSet.getSpacePermissions();
+        this.threads = (Long) dataMap.get("dataSyncThreadSize");
+        this.executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
 
-					for (RemoteContentPermission remoteContentPermission : remoteContentPermissions) {
-						if (remoteContentPermission.getGroupName() != null) {
-							spacePermissions.add(remoteContentPermission.getGroupName());
-						}
-					}
-				}
+        /** Get spaces and start reading from them **/
 
-				if (dataSpaceExclude != null && !dataSpaceExclude.isEmpty() && dataSpaceExclude.stream().anyMatch(x -> space.getName().toLowerCase().matches(x.toLowerCase()))) {
-					LOGGER.info("Excluding space {}", space.getName());
-					return;
-				} else {
-					LOGGER.info("Include space {}", space.getName());
-				}
+        List<String> dataSpaceExclude = (List<String>) dataMap.getOrDefault("dataSpaceExclude", new ArrayList<>());
+        List<String> spacesToCrawl = (List<String>) dataMap.getOrDefault("sites", new ArrayList<>());
+        List<Space> spaces = getSpaces(spacesToCrawl);
 
-				/**
-				 * Each space has an index, so we can keep track of previously ingested files
-				 **/
+        spaces.stream().forEach(space -> {
 
-				String id = Base64.getEncoder().encodeToString(space.getKey().getBytes());
-				Map<String, String> historyAddMap = new HashMap<>();
-				Map<String, String> historyDeleteMap = new HashMap<>();
+            try {
 
-				if (dataFolder != null) {
+                LOGGER.info("Searching Space Permissions For Space {}", space);
 
-					historyAddMap = getHistoryFile(id, Command.ADD);
-					historyDeleteMap = getHistoryFile(id, Command.DELETE);
-				}
+                List<String> spacePermissions = new ArrayList<>();
 
-				/** Data Extraction **/
-				extractSpaceContent(consumer, username, password, url, space, ContentStatus.CURRENT, Command.ADD, historyAddMap, spacePermissions);
-				extractSpaceContent(consumer, username, password, url, space, ContentStatus.TRASHED, Command.DELETE, historyDeleteMap, spacePermissions);
+                if (dataMap.containsKey("soapService") && dataMap.containsKey("soapToken")) {
 
-				/** Save the new history **/
+                    LOGGER.info("Searching SOAP Space Permissions For Space {}", space);
+                    
+                    ConfluenceSoapService soapService = (ConfluenceSoapService) dataMap.get("soapService");
+                    String soapToken = dataMap.getString("soapToken");
 
-				if (dataFolder != null) {
+                    RemoteSpacePermissionSet remoteSpacePermissionSet = soapService.getSpacePermissionSet(soapToken, space.getKey(), "VIEWSPACE");
+                    RemoteContentPermission[] remoteContentPermissions = remoteSpacePermissionSet.getSpacePermissions();
 
-					saveHistoryFile(id, historyAddMap, Command.ADD);
-					saveHistoryFile(id, historyDeleteMap, Command.DELETE);
-				}
+                    for (RemoteContentPermission remoteContentPermission : remoteContentPermissions) {
+                        if (remoteContentPermission.getGroupName() != null) {
+                            spacePermissions.add(remoteContentPermission.getGroupName());
+                        }
+                    }
+                }
 
-			} catch (Exception e) {
-				LOGGER.error("Failed to get space permisisons", e);
-			}
+                if (dataSpaceExclude != null && !dataSpaceExclude.isEmpty() && dataSpaceExclude.stream().anyMatch(x -> space.getName().toLowerCase().matches(x.toLowerCase()))) {
+                    LOGGER.info("Excluding space {}", space.getName());
+                    return;
+                } else {
+                    LOGGER.info("Include space {}", space.getName());
+                }
 
-		});
+                LOGGER.info("Finished Space Permissions For Space {}", space);
+                
+                /**
+                 * Each space has an index, so we can keep track of previously
+                 * ingested files
+                 **/
 
-		LOGGER.info("Finished Confluence Data Sync");
+                String id = Base64.getEncoder().encodeToString(space.getKey().getBytes());
+                Map<String, String> historyAddMap = new HashMap<>();
+                Map<String, String> historyDeleteMap = new HashMap<>();
 
-	}
+                if (dataFolder != null) {
 
-	private void saveHistoryFile(String id, Map<String, String> historyMap, Command command) {
+                    historyAddMap = getHistoryFile(id, Command.ADD);
+                    historyDeleteMap = getHistoryFile(id, Command.DELETE);
+                }
 
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).append(id).append("_").append(command.name()).append(".json").toString());
+                /** Data Extraction **/
+                extractSpaceContent(consumer, username, password, url, space, ContentStatus.CURRENT, Command.ADD, historyAddMap, spacePermissions);
+                extractSpaceContent(consumer, username, password, url, space, ContentStatus.TRASHED, Command.DELETE, historyDeleteMap, spacePermissions);
 
-		try {
-			String json = objectMapper.writeValueAsString(historyMap);
-			Files.write(pathFile, json.getBytes());
-		} catch (IOException e) {
-			LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);
-		}
+                /** Save the new history **/
 
-	}
+                if (dataFolder != null) {
 
-	@SuppressWarnings("unchecked")
-	private Map<String, String> getHistoryFile(String id, Command command) {
+                    saveHistoryFile(id, historyAddMap, Command.ADD);
+                    saveHistoryFile(id, historyDeleteMap, Command.DELETE);
+                }
 
-		Path pathFolder = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).toString());
+            } catch (Exception e) {
+                LOGGER.error("Failed to get space permisisons", e);
+            }
 
-		if (!pathFolder.toFile().exists()) {
+        });
 
-			try {
-				Files.createDirectory(pathFolder);
-			} catch (IOException e) {
-				LOGGER.info("Failed to create data folder : {}", pathFolder, e);
-			}
-		}
+        LOGGER.info("Finished Confluence Data Sync");
 
-		Path pathFile = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).append(id).append("_").append(command.name()).append(".json").toString());
+    }
 
-		if (pathFile.toFile().exists()) {
+    private void saveHistoryFile(String id, Map<String, String> historyMap, Command command) {
 
-			LOGGER.info("Reading file {}", pathFile);
+        Path pathFile = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).append(id).append("_").append(command.name()).append(".json").toString());
 
-			try {
-				return objectMapper.readValue(pathFile.toFile(), Map.class);
-			} catch (IOException e) {
-				LOGGER.info("Failed to read history file : {}", pathFile, e);
-			}
-		} else {
-			LOGGER.info("Could not read file {}", pathFile);
-		}
+        try {
+            String json = objectMapper.writeValueAsString(historyMap);
+            Files.write(pathFile, json.getBytes());
+        } catch (IOException e) {
+            LOGGER.warn("Failed to write tmp file to disk {}", pathFile, e);
+        }
 
-		return new HashMap<>();
-	}
+    }
 
-	private void extractSpaceContent(Consumer<Map<String, Object>> consumer, String username, String password, String url, Space space, ContentStatus contentStatus, Command command, Map<String, String> historyMap, List<String> spacePermissions) {
+    @SuppressWarnings("unchecked")
+    private Map<String, String> getHistoryFile(String id, Command command) {
 
-		int size = 0;
-		ContentType contentType = ContentType.PAGE;
-		PageRequest pageRequest = new SimplePageRequest(size, batchSize.intValue());
+        Path pathFolder = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).toString());
 
-		try {
+        if (!pathFolder.toFile().exists()) {
 
-			PageResponse<Content> pageResponse = remoteContentServiceImpl
-					.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
-					.withStatus(contentStatus)
-					.withSpace(space)
-					.fetchMany(contentType, pageRequest)
-					.claim();
+            try {
+                Files.createDirectory(pathFolder);
+            } catch (IOException e) {
+                LOGGER.info("Failed to create data folder : {}", pathFolder, e);
+            }
+        }
 
-			while (!pageResponse.getResults().isEmpty()) {
+        Path pathFile = Paths.get(new StringBuilder(dataFolder).append(FETCHED_DATA_FOLDER).append(id).append("_").append(command.name()).append(".json").toString());
 
-				List<Content> pages = pageResponse.getResults();
+        if (pathFile.toFile().exists()) {
 
-				for (Content page : pages) {
+            LOGGER.info("Reading file {}", pathFile);
 
-					executorService.execute(() -> {
+            try {
+                return objectMapper.readValue(pathFile.toFile(), Map.class);
+            } catch (IOException e) {
+                LOGGER.info("Failed to read history file : {}", pathFile, e);
+            }
+        } else {
+            LOGGER.info("Could not read file {}", pathFile);
+        }
 
-						/** Metadata **/
+        return new HashMap<>();
+    }
 
-						Long id = page.getId().asLong();
-						Long modifiedDate = page.getVersion().getWhen().getMillis();
+    private void extractSpaceContent(Consumer<Map<String, Object>> consumer, String username, String password, String url, Space space, ContentStatus contentStatus, Command command, Map<String, String> historyMap, List<String> spacePermissions) {
 
-						Map<String, Object> metadata = new HashMap<>();
+        int size = 0;
+        ContentType contentType = ContentType.PAGE;
+        PageRequest pageRequest = new SimplePageRequest(size, batchSize.intValue());
 
-						metadata.put(METADATA_TITLE, page.getTitle());
-						metadata.put(METADATA_PAGE_NAME, page.getTitle());
-						metadata.put(METADATA_MODIFIED_DATE, modifiedDate.toString());
-						metadata.put(METADATA_MODIFIED_USER, page.getVersion().getBy().getOptionalUsername().get());
-						metadata.put(METADATA_COMMAND, command.name());
-						metadata.put(METADATA_STATUS, page.getStatus().getValue());
-						metadata.put(METADATA_CONTENT_TYPE, "confluence/" + contentType.getValue());
-						metadata.put(METADATA_REFERENCE, id.toString());
-						metadata.put(METADATA_URL, new StringBuilder(url).append(PREFIX_PAGE).append(page.getId().asLong()).toString());
-						metadata.put(METADATA_FETCHED_DATE, new Date().getTime());
+        try {
 
-						metadata.put(METADATA_SPACE_ID, space.getId());
-						metadata.put(METADATA_SPACE_NAME, space.getName());
-						metadata.put(METADATA_SPACE_URL, new StringBuilder(url).append(PREFIX_SPACE).append(space.getKey()).toString());
+            PageResponse<Content> pageResponse = remoteContentServiceImpl
+                    .find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
+                    .withStatus(contentStatus)
+                    .withSpace(space)
+                    .fetchMany(contentType, pageRequest)
+                    .claim();
 
-						Permissions permissions = addAllRestrictions(page, command, spacePermissions);
+            while (!pageResponse.getResults().isEmpty()) {
 
-						metadata.put(METADATA_ACL_USERS, new ArrayList<>(permissions.getUsers()));
-						metadata.put(METADATA_ACL_GROUPS, new ArrayList<>(permissions.getGroups()));
+                List<Content> pages = pageResponse.getResults();
 
-						List<Content> attachments = getAttachments(page);
-						attachments.stream().forEach(attach -> {
+                for (Content page : pages) {
 
-							try {
-								sendAttachment(consumer, username, password, url, space, attach, page, permissions, command, historyMap);
-							} catch (Exception e1) {
-								LOGGER.error("Failed to prepare the download of attachment", e1);
-							}
-						});
+                    executorService.execute(() -> {
 
-						/** Body **/
+                        /** Metadata **/
 
-						Map<ContentRepresentation, ContentBody> body = page.getBody();
-						StringBuilder stringBuilder = new StringBuilder();
-						body.entrySet().stream().forEach(m -> stringBuilder.append(m.getValue().getValue()));
-						metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(stringBuilder.toString().getBytes()));
+                        Long id = page.getId().asLong();
+                        Long modifiedDate = page.getVersion().getWhen().getMillis();
 
-						Map<String, Object> loggerMap = new HashMap<>();
+                        Map<String, Object> metadata = new HashMap<>();
 
-						if (this.dataPageExclude == null || this.dataPageExclude.isEmpty() || this.dataPageExclude.stream().noneMatch(x -> metadata.get(METADATA_PAGE_NAME).toString().toLowerCase().matches(x))) {
+                        metadata.put(METADATA_TITLE, page.getTitle());
+                        metadata.put(METADATA_PAGE_NAME, page.getTitle());
+                        metadata.put(METADATA_MODIFIED_DATE, modifiedDate.toString());
+                        metadata.put(METADATA_MODIFIED_USER, page.getVersion().getBy().getOptionalUsername().get());
+                        metadata.put(METADATA_COMMAND, command.name());
+                        metadata.put(METADATA_STATUS, page.getStatus().getValue());
+                        metadata.put(METADATA_CONTENT_TYPE, "confluence/" + contentType.getValue());
+                        metadata.put(METADATA_REFERENCE, id.toString());
+                        metadata.put(METADATA_URL, new StringBuilder(url).append(PREFIX_PAGE).append(page.getId().asLong()).toString());
+                        metadata.put(METADATA_FETCHED_DATE, new Date().getTime());
 
-							if (historyMap.containsKey(id.toString()) && historyMap.get(id.toString()).equals(modifiedDate.toString())) {
-								loggerMap.put(LOGGER_ACTION, LOGGER_EXCLUDE_DATA);
+                        metadata.put(METADATA_SPACE_ID, space.getId());
+                        metadata.put(METADATA_SPACE_NAME, space.getName());
+                        metadata.put(METADATA_SPACE_URL, new StringBuilder(url).append(PREFIX_SPACE).append(space.getKey()).toString());
 
-							} else {
-								consumer.accept(metadata);
-								historyMap.put(id.toString(), modifiedDate.toString());
-								loggerMap.put(LOGGER_ACTION, LOGGER_INCLUDE_DATA);
-							}
+                        Permissions permissions = addAllRestrictions(page, command, spacePermissions);
 
-						} else {
-							loggerMap.put(LOGGER_ACTION, LOGGER_EXCLUDE_DATA);
-						}
+                        metadata.put(METADATA_ACL_USERS, new ArrayList<>(permissions.getUsers()));
+                        metadata.put(METADATA_ACL_GROUPS, new ArrayList<>(permissions.getGroups()));
 
-						loggerMap.put(LOGGER_REFERENCE, metadata.get(METADATA_REFERENCE));
-						loggerMap.put(LOGGER_STATUS, page.getStatus().getValue());
-						loggerMap.put(LOGGER_URL, metadata.get(METADATA_URL));
-						loggerMap.put(LOGGER_SPACE, metadata.get(METADATA_SPACE_NAME));
+                        List<Content> attachments = getAttachments(page);
+                        attachments.stream().forEach(attach -> {
 
-						if (LOGGER.isInfoEnabled()) {
+                            try {
+                                sendAttachment(consumer, username, password, url, space, attach, page, permissions, command, historyMap);
+                            } catch (Exception e1) {
+                                LOGGER.error("Failed to prepare the download of attachment", e1);
+                            }
+                        });
 
-							try {
-								LOGGER.info(objectMapper.writeValueAsString(loggerMap));
-							} catch (Exception e) {
-								LOGGER.error("Failed to log entry", e);
-							}
-						}
-					});
+                        /** Body **/
 
-					while (executorService.getActiveCount() >= threads) {
-						Thread.sleep(500);
-					}
+                        Map<ContentRepresentation, ContentBody> body = page.getBody();
+                        StringBuilder stringBuilder = new StringBuilder();
+                        body.entrySet().stream().forEach(m -> stringBuilder.append(m.getValue().getValue()));
+                        metadata.put(METADATA_CONTENT, Base64.getEncoder().encodeToString(stringBuilder.toString().getBytes()));
 
-				}
+                        Map<String, Object> loggerMap = new HashMap<>();
 
-				try {
-					Thread.sleep(this.sleep);
-				} catch (InterruptedException e) {
-					LOGGER.info("Could not continue sleeping");
-				}
-				
-				size = size + batchSize.intValue();
-				pageRequest = new SimplePageRequest(size, batchSize.intValue());
-				pageResponse = remoteContentServiceImpl
-						.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
-						.withStatus(contentStatus)
-						.withSpace(space)
-						.fetchMany(contentType, pageRequest)
-						.claim();
+                        if (this.dataPageExclude == null || this.dataPageExclude.isEmpty() || this.dataPageExclude.stream().noneMatch(x -> metadata.get(METADATA_PAGE_NAME).toString().toLowerCase().matches(x))) {
 
-			}
+                            if (historyMap.containsKey(id.toString()) && historyMap.get(id.toString()).equals(modifiedDate.toString())) {
+                                loggerMap.put(LOGGER_ACTION, LOGGER_EXCLUDE_DATA);
 
-		} catch (Exception e) {
-			LOGGER.info("Failed to get {}", contentType.getValue(), e);
-		}
-	}
+                            } else {
+                                consumer.accept(metadata);
+                                historyMap.put(id.toString(), modifiedDate.toString());
+                                loggerMap.put(LOGGER_ACTION, LOGGER_INCLUDE_DATA);
+                            }
 
-	private void sendAttachment(Consumer<Map<String, Object>> consumer, String username, String password, String url, Space space, Content attach, Content parent, Permissions permissions, Command command, Map<String, String> historyMap) throws IOException {
+                        } else {
+                            loggerMap.put(LOGGER_ACTION, LOGGER_EXCLUDE_DATA);
+                        }
 
-		Long id = attach.getId().asLong();
-		Long modifiedDate = attach.getVersion().getWhen().getMillis();
+                        loggerMap.put(LOGGER_REFERENCE, metadata.get(METADATA_REFERENCE));
+                        loggerMap.put(LOGGER_STATUS, page.getStatus().getValue());
+                        loggerMap.put(LOGGER_URL, metadata.get(METADATA_URL));
+                        loggerMap.put(LOGGER_SPACE, metadata.get(METADATA_SPACE_NAME));
 
-		Map<String, Object> metadata = new HashMap<>();
+                        if (LOGGER.isInfoEnabled()) {
 
-		metadata.put(METADATA_TITLE, attach.getTitle());
-		metadata.put(METADATA_FILE_NAME, attach.getTitle());
-		metadata.put(METADATA_MODIFIED_DATE, attach.getVersion().getWhen().getMillis());
-		metadata.put(METADATA_MODIFIED_USER, attach.getVersion().getBy().getOptionalUsername().get());
-		metadata.put(METADATA_COMMAND, command.name());
-		metadata.put(METADATA_STATUS, attach.getStatus().getValue());
-		metadata.put(METADATA_CONTENT_TYPE, "confluence/" + ContentType.ATTACHMENT);
-		metadata.put(METADATA_REFERENCE, id.toString());
-		metadata.put(METADATA_URL, new StringBuilder(url).append(PREFIX_ATTACHMENT).append(parent.getId().asLong()).append("/").append(attach.getTitle()).toString());
-		metadata.put(METADATA_FETCHED_DATE, new Date().getTime());
+                            try {
+                                LOGGER.info(objectMapper.writeValueAsString(loggerMap));
+                            } catch (Exception e) {
+                                LOGGER.error("Failed to log entry", e);
+                            }
+                        }
+                    });
 
-		metadata.put(METADATA_SPACE_ID, space.getId());
-		metadata.put(METADATA_SPACE_NAME, space.getName());
-		metadata.put(METADATA_SPACE_URL, new StringBuilder(url).append(PREFIX_SPACE).append(space.getKey()).toString());
+                    while (executorService.getActiveCount() >= threads) {
+                        Thread.sleep(500);
+                    }
 
-		metadata.put(METADATA_PARENT_ID, parent.getId().asLong());
-		metadata.put(METADATA_PARENT_NAME, parent.getTitle());
-		metadata.put(METADATA_PARENT_URL, new StringBuilder(url).append(PREFIX_PAGE).append(parent.getId().asLong()).toString());
+                }
 
-		metadata.put(METADATA_ACL_USERS, new ArrayList<>(permissions.getUsers()));
-		metadata.put(METADATA_ACL_GROUPS, new ArrayList<>(permissions.getGroups()));
+                try {
+                    Thread.sleep(this.sleep);
+                } catch (InterruptedException e) {
+                    LOGGER.info("Could not continue sleeping");
+                }
 
-		Map<LinkType, Link> links = attach.getLinks();
-		Link link = links.entrySet().stream().filter(x -> x.getKey().equals(LinkType.DOWNLOAD)).map(Entry::getValue).findFirst().orElse(null);
+                size = size + batchSize.intValue();
+                pageRequest = new SimplePageRequest(size, batchSize.intValue());
+                pageResponse = remoteContentServiceImpl
+                        .find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionAnscestors)
+                        .withStatus(contentStatus)
+                        .withSpace(space)
+                        .fetchMany(contentType, pageRequest)
+                        .claim();
 
-		Map<String, Object> loggerMap = new HashMap<>();
+            }
 
-		if (this.dataAttachmentsInclude == null || this.dataAttachmentsInclude.isEmpty() || this.dataAttachmentsInclude.stream().anyMatch(x -> metadata.get(METADATA_FILE_NAME).toString().toLowerCase().matches(x))) {
+        } catch (Exception e) {
+            LOGGER.info("Failed to get {}", contentType.getValue(), e);
+        }
+    }
 
-			if (this.dataAttachmentsExclude == null || this.dataAttachmentsExclude.isEmpty() || this.dataAttachmentsExclude.stream().noneMatch(x -> metadata.get(METADATA_FILE_NAME).toString().toLowerCase().matches(x))) {
+    private void sendAttachment(Consumer<Map<String, Object>> consumer, String username, String password, String url, Space space, Content attach, Content parent, Permissions permissions, Command command, Map<String, String> historyMap) throws IOException {
 
-				if (historyMap.containsKey(id.toString()) && historyMap.get(id.toString()).equals(modifiedDate.toString())) {
-					loggerMap.put(LOGGER_ACTION, LOGGER_EXCLUDE_DATA);
-				} else {
+        Long id = attach.getId().asLong();
+        Long modifiedDate = attach.getVersion().getWhen().getMillis();
 
-					if (link != null && command.equals(Command.ADD)) {
+        Map<String, Object> metadata = new HashMap<>();
 
-						String downloadUrl = url + link.getPath();
-						URLConnection urlConnection = urlHelper.getUrl(username, password, downloadUrl);
+        metadata.put(METADATA_TITLE, attach.getTitle());
+        metadata.put(METADATA_FILE_NAME, attach.getTitle());
+        metadata.put(METADATA_MODIFIED_DATE, attach.getVersion().getWhen().getMillis());
+        metadata.put(METADATA_MODIFIED_USER, attach.getVersion().getBy().getOptionalUsername().get());
+        metadata.put(METADATA_COMMAND, command.name());
+        metadata.put(METADATA_STATUS, attach.getStatus().getValue());
+        metadata.put(METADATA_CONTENT_TYPE, "confluence/" + ContentType.ATTACHMENT);
+        metadata.put(METADATA_REFERENCE, id.toString());
+        metadata.put(METADATA_URL, new StringBuilder(url).append(PREFIX_ATTACHMENT).append(parent.getId().asLong()).append("/").append(attach.getTitle()).toString());
+        metadata.put(METADATA_FETCHED_DATE, new Date().getTime());
 
-						try (InputStream content = urlConnection.getInputStream()) {
+        metadata.put(METADATA_SPACE_ID, space.getId());
+        metadata.put(METADATA_SPACE_NAME, space.getName());
+        metadata.put(METADATA_SPACE_URL, new StringBuilder(url).append(PREFIX_SPACE).append(space.getKey()).toString());
 
-							byte[] bytes = IOUtils.toByteArray(content);
+        metadata.put(METADATA_PARENT_ID, parent.getId().asLong());
+        metadata.put(METADATA_PARENT_NAME, parent.getTitle());
+        metadata.put(METADATA_PARENT_URL, new StringBuilder(url).append(PREFIX_PAGE).append(parent.getId().asLong()).toString());
 
-							if (dataAttachmentsMaxSize == null || dataAttachmentsMaxSize == 0l || bytes.length < dataAttachmentsMaxSize.intValue()) {
-								String encodedContent = Base64.getEncoder().encodeToString(bytes);
-								metadata.put(METADATA_CONTENT, encodedContent);
-							}
+        metadata.put(METADATA_ACL_USERS, new ArrayList<>(permissions.getUsers()));
+        metadata.put(METADATA_ACL_GROUPS, new ArrayList<>(permissions.getGroups()));
 
-						} catch (Exception e) {
-							LOGGER.error("Failed to download attachment content", e);
-						}
-					}
+        Map<LinkType, Link> links = attach.getLinks();
+        Link link = links.entrySet().stream().filter(x -> x.getKey().equals(LinkType.DOWNLOAD)).map(Entry::getValue).findFirst().orElse(null);
 
-					consumer.accept(metadata);
-					historyMap.put(id.toString(), modifiedDate.toString());
-					loggerMap.put(LOGGER_ACTION, LOGGER_INCLUDE_DATA);
-				}
+        Map<String, Object> loggerMap = new HashMap<>();
 
-			} else {
-				loggerMap.put(LOGGER_ACTION, LOGGER_EXCLUDE_DATA);
-			}
+        if (this.dataAttachmentsInclude == null || this.dataAttachmentsInclude.isEmpty() || this.dataAttachmentsInclude.stream().anyMatch(x -> metadata.get(METADATA_FILE_NAME).toString().toLowerCase().matches(x))) {
 
-		} else {
-			loggerMap.put(LOGGER_ACTION, LOGGER_EXCLUDE_DATA);
-		}
+            if (this.dataAttachmentsExclude == null || this.dataAttachmentsExclude.isEmpty() || this.dataAttachmentsExclude.stream().noneMatch(x -> metadata.get(METADATA_FILE_NAME).toString().toLowerCase().matches(x))) {
 
-		loggerMap.put(LOGGER_REFERENCE, metadata.get(METADATA_REFERENCE));
-		loggerMap.put(LOGGER_STATUS, attach.getStatus().getValue());
-		loggerMap.put(LOGGER_URL, metadata.get(METADATA_URL));
-		loggerMap.put(LOGGER_SPACE, metadata.get(METADATA_SPACE_NAME));
+                if (historyMap.containsKey(id.toString()) && historyMap.get(id.toString()).equals(modifiedDate.toString())) {
+                    loggerMap.put(LOGGER_ACTION, LOGGER_EXCLUDE_DATA);
+                } else {
 
-		if (LOGGER.isInfoEnabled()) {
-			LOGGER.info(objectMapper.writeValueAsString(loggerMap));
-		}
-	}
+                    if (link != null && command.equals(Command.ADD)) {
 
-	private List<Content> getAttachments(Content content) {
+                        String downloadUrl = url + link.getPath();
+                        URLConnection urlConnection = urlHelper.getUrl(username, password, downloadUrl);
 
-		int size = 0;
-		PageRequest pageRequest = new SimplePageRequest(size, batchSize.intValue());
+                        try (InputStream content = urlConnection.getInputStream()) {
 
-		List<Content> contents = new ArrayList<>();
+                            byte[] bytes = IOUtils.toByteArray(content);
 
-		try {
-			PageResponse<Content> attachments = remoteAttachmentServiceImpl
-					.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer)
-					.withContainerId(content.getId())
-					.fetchMany(pageRequest).claim();
+                            if (dataAttachmentsMaxSize == null || dataAttachmentsMaxSize == 0l || bytes.length < dataAttachmentsMaxSize.intValue()) {
+                                String encodedContent = Base64.getEncoder().encodeToString(bytes);
+                                metadata.put(METADATA_CONTENT, encodedContent);
+                            }
 
-			while (!attachments.getResults().isEmpty()) {
+                        } catch (Exception e) {
+                            LOGGER.error("Failed to download attachment content", e);
+                        }
+                    }
 
-				contents.addAll(attachments.getResults().stream().collect(Collectors.toList()));
+                    consumer.accept(metadata);
+                    historyMap.put(id.toString(), modifiedDate.toString());
+                    loggerMap.put(LOGGER_ACTION, LOGGER_INCLUDE_DATA);
+                }
 
-				try {
-					Thread.sleep(this.sleep);
-				} catch (InterruptedException e) {
-					LOGGER.info("Could not continue sleeping");
-				}
-				
-				size = size + batchSize.intValue();
-				pageRequest = new SimplePageRequest(size, batchSize.intValue());
-				attachments = remoteAttachmentServiceImpl
-						.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer)
-						.withContainerId(content.getId())
-						.fetchMany(pageRequest).claim();
+            } else {
+                loggerMap.put(LOGGER_ACTION, LOGGER_EXCLUDE_DATA);
+            }
 
-			}
+        } else {
+            loggerMap.put(LOGGER_ACTION, LOGGER_EXCLUDE_DATA);
+        }
 
-		} catch (Exception e) {
-			LOGGER.error("Failed to retrive attachments from page {}", content.getId());
-		}
+        loggerMap.put(LOGGER_REFERENCE, metadata.get(METADATA_REFERENCE));
+        loggerMap.put(LOGGER_STATUS, attach.getStatus().getValue());
+        loggerMap.put(LOGGER_URL, metadata.get(METADATA_URL));
+        loggerMap.put(LOGGER_SPACE, metadata.get(METADATA_SPACE_NAME));
 
-		return contents;
+        if (LOGGER.isInfoEnabled()) {
+            LOGGER.info(objectMapper.writeValueAsString(loggerMap));
+        }
+    }
 
-	}
+    private List<Content> getAttachments(Content content) {
 
-	private Permissions addAllRestrictions(Content content, Command command, List<String> spacePermissions) {
+        int size = 0;
+        PageRequest pageRequest = new SimplePageRequest(size, batchSize.intValue());
 
-		Permissions permissions = new Permissions();
+        List<Content> contents = new ArrayList<>();
 
-		try {
+        try {
+            PageResponse<Content> attachments = remoteAttachmentServiceImpl
+                    .find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer)
+                    .withContainerId(content.getId())
+                    .fetchMany(pageRequest).claim();
 
-			if (!command.equals(Command.DELETE)) {
+            while (!attachments.getResults().isEmpty()) {
 
-				getContentPermissions(content, permissions);
-				content.getAncestors().stream().forEach(ancestor -> getContentPermissions(ancestor, permissions));
+                contents.addAll(attachments.getResults().stream().collect(Collectors.toList()));
 
-				if (permissions.getGroups().isEmpty() && permissions.getUsers().isEmpty()) {
-					permissions.getGroups().addAll(spacePermissions);
-				}
+                try {
+                    Thread.sleep(this.sleep);
+                } catch (InterruptedException e) {
+                    LOGGER.info("Could not continue sleeping");
+                }
 
-			}
+                size = size + batchSize.intValue();
+                pageRequest = new SimplePageRequest(size, batchSize.intValue());
+                attachments = remoteAttachmentServiceImpl
+                        .find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer)
+                        .withContainerId(content.getId())
+                        .fetchMany(pageRequest).claim();
 
-		} catch (Exception e) {
-			LOGGER.error("Failed to read page permissions", e);
-		}
+            }
 
-		return permissions;
-	}
+        } catch (Exception e) {
+            LOGGER.error("Failed to retrive attachments from page {}", content.getId());
+        }
 
-	private void getContentPermissions(Content content, Permissions permissions) {
+        return contents;
 
-		PageRequest pageRequest = new SimplePageRequest(0, 10);
-		ContentRestrictionsPageResponse contentRestrictionsPageResponse = remoteContentRestrictionServiceImpl.getRestrictions(content.getId(), pageRequest).claim();
+    }
 
-		contentRestrictionsPageResponse.getResults().stream().filter(x -> x.getOperation().getOperationKey().equals(OperationKey.READ)).forEach(perm -> {
+    private Permissions addAllRestrictions(Content content, Command command, List<String> spacePermissions) {
 
-			permissions.getUsers().addAll(perm.getRestrictions().entrySet().stream().filter(r -> r.getKey().equals(SubjectType.USER))
-					.flatMap(r -> r.getValue().getResults().stream())
-					.map(s -> (Person) s)
-					.map(p -> p.getOptionalUsername().getOrNull())
-					.filter(Objects::nonNull)
-					.collect(Collectors.toList()));
+        Permissions permissions = new Permissions();
 
-			permissions.getGroups().addAll(perm.getRestrictions().entrySet().stream()
-					.filter(r -> r.getKey().equals(SubjectType.GROUP))
-					.flatMap(r -> r.getValue().getResults().stream())
-					.map(Subject::getDisplayName)
-					.collect(Collectors.toList()));
+        try {
 
-		});
-	}
+            if (!command.equals(Command.DELETE)) {
 
-	private List<Space> getSpaces(List<String> sites) {
+                getContentPermissions(content, permissions);
+                content.getAncestors().stream().forEach(ancestor -> getContentPermissions(ancestor, permissions));
 
-		int size = 0;
-		PageRequest pageRequest = new SimplePageRequest(size, batchSize.intValue());
+                if (permissions.getGroups().isEmpty() && permissions.getUsers().isEmpty()) {
+                    permissions.getGroups().addAll(spacePermissions);
+                }
 
-		RemoteSpaceFinder remoteSpaceFinder = remoteSpaceServiceImpl.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionPermissions);
+            }
 
-		if (!sites.isEmpty()) {
-			remoteSpaceFinder.withKeys(sites.toArray(new String[sites.size()]));
-		}
+        } catch (Exception e) {
+            LOGGER.error("Failed to read page permissions", e);
+        }
 
-		PageResponse<Space> pageResponse = remoteSpaceFinder.fetchMany(pageRequest).claim();
+        return permissions;
+    }
 
-		List<Space> spaces = new ArrayList<>();
+    private void getContentPermissions(Content content, Permissions permissions) {
 
-		while (!pageResponse.getResults().isEmpty()) {
+        PageRequest pageRequest = new SimplePageRequest(0, 10);
+        ContentRestrictionsPageResponse contentRestrictionsPageResponse = remoteContentRestrictionServiceImpl.getRestrictions(content.getId(), pageRequest).claim();
 
-			spaces.addAll(pageResponse.getResults().stream().collect(Collectors.toList()));
+        contentRestrictionsPageResponse.getResults().stream().filter(x -> x.getOperation().getOperationKey().equals(OperationKey.READ)).forEach(perm -> {
 
-			size = size + batchSize.intValue();
-			pageRequest = new SimplePageRequest(size, batchSize.intValue());
+            permissions.getUsers().addAll(perm.getRestrictions().entrySet().stream().filter(r -> r.getKey().equals(SubjectType.USER))
+                    .flatMap(r -> r.getValue().getResults().stream())
+                    .map(s -> (Person) s)
+                    .map(p -> p.getOptionalUsername().getOrNull())
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toList()));
 
-			remoteSpaceFinder = remoteSpaceServiceImpl.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionPermissions);
+            permissions.getGroups().addAll(perm.getRestrictions().entrySet().stream()
+                    .filter(r -> r.getKey().equals(SubjectType.GROUP))
+                    .flatMap(r -> r.getValue().getResults().stream())
+                    .map(Subject::getDisplayName)
+                    .collect(Collectors.toList()));
 
-			if (!sites.isEmpty()) {
-				remoteSpaceFinder.withKeys(sites.toArray(new String[sites.size()]));
-			}
+        });
+    }
 
-			try {
-				Thread.sleep(this.sleep);
-			} catch (InterruptedException e) {
-				LOGGER.info("Could not continue sleeping");
-			}
-			
-			pageResponse = remoteSpaceFinder.fetchMany(pageRequest).claim();
+    private List<Space> getSpaces(List<String> sites) {
 
-		}
+        LOGGER.info("Searching Confluence Spaces");
 
-		spaces.stream().forEach(space -> LOGGER.info("Space found : {}", space.getName()));
+        int size = 0;
+        PageRequest pageRequest = new SimplePageRequest(size, batchSize.intValue());
 
-		return spaces;
+        RemoteSpaceFinder remoteSpaceFinder = remoteSpaceServiceImpl.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionPermissions);
 
-	}
+        if (!sites.isEmpty()) {
+            remoteSpaceFinder.withKeys(sites.toArray(new String[sites.size()]));
+        }
+
+        PageResponse<Space> pageResponse = remoteSpaceFinder.fetchMany(pageRequest).claim();
+
+        List<Space> spaces = new ArrayList<>();
+
+        while (!pageResponse.getResults().isEmpty()) {
+
+            List<Space> spacesSearch = pageResponse.getResults().stream().collect(Collectors.toList());
+
+            LOGGER.info("Searching Confluence Spaces {}", spacesSearch);
+            spaces.addAll(spacesSearch);
+
+            size = size + batchSize.intValue();
+            pageRequest = new SimplePageRequest(size, batchSize.intValue());
+
+            remoteSpaceFinder = remoteSpaceServiceImpl.find(expansionBody, expansionMetadata, expansionVersion, expansionDescendants, expansionChildren, expansionDescendants, expansionContainer, expansionPermissions);
+
+            if (!sites.isEmpty()) {
+                remoteSpaceFinder.withKeys(sites.toArray(new String[sites.size()]));
+            }
+
+            try {
+                Thread.sleep(this.sleep);
+            } catch (InterruptedException e) {
+                LOGGER.info("Could not continue sleeping");
+            }
+
+            pageResponse = remoteSpaceFinder.fetchMany(pageRequest).claim();
+
+        }
+
+        LOGGER.info("Finished Searching Confluence Spaces");
+
+        return spaces;
+
+    }
 
 }
