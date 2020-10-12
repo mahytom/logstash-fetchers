@@ -462,10 +462,8 @@ public class FetcherJob implements Job {
             } else if (!urlString.startsWith("http") && !urlString.startsWith("/")) {
 
                 URL urlRoot = new URL(rootUrl);
-                String path = urlRoot.getPath();
 
-                if (StringUtils.isEmpty(path) || path.equals("/")) {
-
+                if (urlString.startsWith("/")) {
                     urlString = urlRoot + "/" + urlString;
                 } else {
                     urlString = parentUrl.substring(0, parentUrl.lastIndexOf('/') + 1) + urlString;

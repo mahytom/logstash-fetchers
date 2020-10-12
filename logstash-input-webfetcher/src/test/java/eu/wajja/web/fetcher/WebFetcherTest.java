@@ -45,7 +45,7 @@ public class WebFetcherTest {
 		configValues.put(WebFetcher.CONFIG_TIMEOUT.name(), new Long((String) properties.get(WebFetcher.PROPERTY_TIMEOUT)));
 		configValues.put(WebFetcher.CONFIG_MAX_PAGES.name(), new Long((String) properties.get(WebFetcher.PROPERTY_MAX_PAGES)));
 		configValues.put(WebFetcher.CONFIG_DISABLE_SSL_CHECK.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_SSL_CHECK)));
-//		configValues.put(WebFetcher.CONFIG_CHROME_DRIVERS.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_CHROME_DRIVERS), String[].class)));
+		configValues.put(WebFetcher.CONFIG_CHROME_DRIVERS.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_CHROME_DRIVERS), String[].class)));
 		configValues.put(WebFetcher.CONFIG_ELASTIC_HOSTNAMES.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES), String[].class)));
 		configValues.put(WebFetcher.CONFIG_REINDEX.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_REINDEX)));
 		configValues.put(WebFetcher.CONFIG_ENABLE_CRAWL.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_ENABLE_CRAWL)));

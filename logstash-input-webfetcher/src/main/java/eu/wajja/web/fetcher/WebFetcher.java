@@ -256,6 +256,7 @@ public class WebFetcher implements Input {
                 CONFIG_ENABLE_CRAWL,
                 CONFIG_ENABLE_DELETE,
                 CONFIG_ENABLE_REGEX,
+                CONFIG_ENABLE_HASHTAG,
                 CONFIG_MAX_WAIT_FOR_CSS_SELECTOR);
     }
 
