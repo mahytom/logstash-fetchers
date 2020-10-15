@@ -178,7 +178,7 @@ public class WebFetcher implements Input {
 
             String uuid = UUID.randomUUID().toString();
 
-            JobDetail job = JobBuilder.newJob(FetcherJob.class)
+            JobDetail job = JobBuilder.newJob(WebFetcherJob.class)
                     .withIdentity(uuid, GROUP_NAME)
                     .setJobData(newJobDataMap)
                     .build();

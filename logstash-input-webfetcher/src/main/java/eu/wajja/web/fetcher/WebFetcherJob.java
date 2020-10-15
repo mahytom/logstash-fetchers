@@ -53,9 +53,9 @@ import eu.wajja.web.fetcher.services.RobotService;
 import eu.wajja.web.fetcher.services.constants.MetadataConstant;
 
 @DisallowConcurrentExecution
-public class FetcherJob implements Job {
+public class WebFetcherJob implements Job {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(FetcherJob.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(WebFetcherJob.class);
 
     private static final String HTTP = "http://";
     private static final String HTTPS = "https://";

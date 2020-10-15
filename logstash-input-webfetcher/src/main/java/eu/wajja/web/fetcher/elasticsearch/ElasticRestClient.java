@@ -16,11 +16,11 @@ import org.elasticsearch.client.RestHighLevelClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import eu.wajja.web.fetcher.FetcherJob;
+import eu.wajja.web.fetcher.WebFetcherJob;
 
 public class ElasticRestClient {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(FetcherJob.class);
+	private static final Logger LOGGER = LoggerFactory.getLogger(ElasticRestClient.class);
 
 	private List<String> hostnames;
 	private String username;
