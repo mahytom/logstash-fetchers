@@ -1,40 +1,21 @@
 package eu.wajja.input.fetcher;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import org.apache.commons.io.IOUtils;
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.Field.Store;
-import org.apache.lucene.document.StringField;
-import org.apache.lucene.index.DirectoryReader;
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.IndexWriter;
-import org.apache.lucene.index.IndexWriterConfig;
-import org.apache.lucene.index.Term;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.TermQuery;
-import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSDirectory;
+import org.quartz.CronScheduleBuilder;
+import org.quartz.JobBuilder;
+import org.quartz.JobDataMap;
+import org.quartz.JobDetail;
+import org.quartz.Trigger;
+import org.quartz.TriggerBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -43,205 +24,138 @@ import co.elastic.logstash.api.Context;
 import co.elastic.logstash.api.Input;
 import co.elastic.logstash.api.LogstashPlugin;
 import co.elastic.logstash.api.PluginConfigSpec;
+import eu.wajja.input.fetcher.config.SchedulerBuilder;
 
 @LogstashPlugin(name = "filesystemfetcher")
 public class FilesystemFetcher implements Input {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(FilesystemFetcher.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(FilesystemFetcher.class);
 
-	public static final PluginConfigSpec<List<Object>> CONFIG_PATHS = PluginConfigSpec.arraySetting("paths");
-	public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE = PluginConfigSpec.arraySetting("exclude", new ArrayList<>(), false, false);
-	public static final PluginConfigSpec<String> CONFIG_DATA_FOLDER = PluginConfigSpec.stringSetting("dataFolder");
-	public static final PluginConfigSpec<Long> CONFIG_THREAD_POOL_SIZE = PluginConfigSpec.numSetting("threads", 10);
+    protected static final String PROPERTY_CRON = "cron";
+    protected static final String PROPERTY_PATHS = "paths";
+    protected static final String PROPERTY_EXCLUDE = "exclude";
+    protected static final String PROPERTY_THREADS = "threads";
+    protected static final String PROPERTY_CONSUMER = "consumer";
+    protected static final String PROPERTY_ELASTIC_HOSTNAMES = "elasticsearchHostnames";
+    protected static final String PROPERTY_ELASTIC_USERNAME = "elasticsearchUsername";
+    protected static final String PROPERTY_ELASTIC_PASSWORD = "elasticsearchPassword";
+    protected static final String PROPERTY_PROXY_HOST = "proxyHost";
+    protected static final String PROPERTY_PROXY_PORT = "proxyPort";
+    protected static final String PROPERTY_PROXY_USER = "proxyUser";
+    protected static final String PROPERTY_PROXY_PASS = "proxyPass";
+    protected static final String PROPERTY_SSL_CHECK = "sslcheck";
 
-	private ThreadPoolExecutor executorService = null;
-	private StandardAnalyzer standardAnalyzer = new StandardAnalyzer();
-	private final CountDownLatch done = new CountDownLatch(1);
-	private volatile boolean stopped;
+    public static final PluginConfigSpec<List<Object>> CONFIG_PATHS = PluginConfigSpec.arraySetting(PROPERTY_PATHS);
+    public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE = PluginConfigSpec.arraySetting(PROPERTY_EXCLUDE, new ArrayList<>(), false, false);
+    public static final PluginConfigSpec<Long> CONFIG_THREADS = PluginConfigSpec.numSetting(PROPERTY_THREADS, 10);
+    public static final PluginConfigSpec<String> CONFIG_CRON = PluginConfigSpec.stringSetting(PROPERTY_CRON);
+    public static final PluginConfigSpec<List<Object>> CONFIG_ELASTIC_HOSTNAMES = PluginConfigSpec.arraySetting(PROPERTY_ELASTIC_HOSTNAMES, new ArrayList<>(), false, false);
+    public static final PluginConfigSpec<String> CONFIG_ELASTIC_USERNAME = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_USERNAME, null, false, false);
+    public static final PluginConfigSpec<String> CONFIG_ELASTIC_PASSWORD = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_PASSWORD, null, false, false);
+    public static final PluginConfigSpec<String> CONFIG_PROXY_HOST = PluginConfigSpec.stringSetting(PROPERTY_PROXY_HOST);
+    public static final PluginConfigSpec<Long> CONFIG_PROXY_PORT = PluginConfigSpec.numSetting(PROPERTY_PROXY_PORT, 80);
+    public static final PluginConfigSpec<String> CONFIG_PROXY_USER = PluginConfigSpec.stringSetting(PROPERTY_PROXY_USER);
+    public static final PluginConfigSpec<String> CONFIG_PROXY_PASS = PluginConfigSpec.stringSetting(PROPERTY_PROXY_PASS);
+    public static final PluginConfigSpec<Boolean> CONFIG_DISABLE_SSL_CHECK = PluginConfigSpec.booleanSetting(PROPERTY_SSL_CHECK, true);
 
-	private String threadId;
-	private Context context;
-	private String dataFolder;
-	private List<String> paths;
-	private List<String> excludedUrls;
+    public static final String GROUP_NAME = "FilesystemFetcherGroup";
 
-	/**
-	 * Mandatory constructor
-	 * 
-	 * @param id
-	 * @param config
-	 * @param context
-	 */
-	public FilesystemFetcher(String id, Configuration config, Context context) {
+    private final CountDownLatch done = new CountDownLatch(1);
+    private volatile boolean stopped;
+    private String threadId;
+    private String cron;
 
-		this.threadId = id;
-		this.context = context;
-		this.paths = config.get(CONFIG_PATHS).stream().map(url -> (String) url).collect(Collectors.toList());
-		this.dataFolder = config.get(CONFIG_DATA_FOLDER);
-		this.excludedUrls = config.get(CONFIG_EXCLUDE).stream().map(url -> (String) url).collect(Collectors.toList());
+    private JobDataMap jobDataMap = new JobDataMap();
 
-		executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(config.get(CONFIG_THREAD_POOL_SIZE).intValue());
-	}
+    /**
+     * Mandatory constructor
+     * 
+     * @param id
+     * @param config
+     * @param context
+     */
+    public FilesystemFetcher(String id, Configuration config, Context context) {
 
-	@Override
-	public void start(Consumer<Map<String, Object>> consumer) {
+        if (context != null && LOGGER.isDebugEnabled()) {
+            LOGGER.debug(context.toString());
+        }
 
-		try {
+        jobDataMap.put(PROPERTY_PATHS, config.get(CONFIG_PATHS).stream().map(url -> (String) url).collect(Collectors.toList()));
+        jobDataMap.put(PROPERTY_EXCLUDE, config.get(CONFIG_EXCLUDE).stream().map(url -> (String) url).collect(Collectors.toList()));
+        jobDataMap.put(PROPERTY_THREADS, config.get(CONFIG_THREADS));
 
-			while (!stopped) {
+        this.cron = config.get(CONFIG_CRON);
 
-				paths.parallelStream().forEach(path -> {
+    }
 
-					try {
+    @Override
+    public void start(Consumer<Map<String, Object>> consumer) {
 
-						Path dataPath = Paths.get(path);
-						String id = Base64.getEncoder().encodeToString(dataPath.toString().getBytes());
-						Path indexPath = Paths.get(dataFolder + "/" + id + "_index");
-						Directory directory = FSDirectory.open(indexPath);
+        LOGGER.info("Starting a new Thread");
 
-						writeDocumentToIndex(directory, new HashMap<>());
+        try {
 
-						File file = dataPath.toFile();
-						Arrays.asList(file.listFiles()).parallelStream().forEach(f -> parseFile(directory, f, consumer));
+            JobDataMap newJobDataMap = new JobDataMap(this.jobDataMap);
+            newJobDataMap.put(PROPERTY_CONSUMER, consumer);
 
-					} catch (IOException e1) {
-						LOGGER.error("Failed to create data directory", e1);
-					}
-				});
+            String uuid = UUID.randomUUID().toString();
 
-				stopped = true;
-			}
+            JobDetail job = JobBuilder.newJob(FilesystemFetcherJob.class)
+                    .withIdentity(uuid, GROUP_NAME)
+                    .setJobData(newJobDataMap)
+                    .build();
 
-		} catch (Exception e) {
-			LOGGER.error("Failed", e);
-		} finally {
-			stopped = true;
-			done.countDown();
-		}
+            Trigger trigger = TriggerBuilder.newTrigger()
+                    .withIdentity(uuid, GROUP_NAME)
+                    .startNow()
+                    .withSchedule(CronScheduleBuilder.cronSchedule(this.cron))
+                    .build();
 
-	}
+            SchedulerBuilder.getScheduler().scheduleJob(job, trigger);
 
-	private void parseFile(Directory directory, File file, Consumer<Map<String, Object>> consumer) {
+            while (!stopped) {
+                Thread.sleep(1000);
+            }
 
-		String path = file.getAbsolutePath().toString();
+        } catch (Exception e) {
+            LOGGER.error("Failedto initialize the cron jobs", e);
+        }
 
-		if (file.isDirectory()) {
+    }
 
-			Arrays.asList(file.listFiles()).stream().forEach(f -> {
+    @Override
+    public void stop() {
 
-				executorService.submit(() -> {
-					parseFile(directory, f, consumer);
-				});
-			});
+        stopped = true;
+    }
 
-		} else {
+    @Override
+    public void awaitStop() throws InterruptedException {
 
-			if (excludedUrls.stream().noneMatch(ex -> file.getName().endsWith(ex))) {
+        done.await();
+    }
 
-				Document document = getDocument(directory, path);
+    @Override
+    public Collection<PluginConfigSpec<?>> configSchema() {
 
-				if (document == null || file.lastModified() > Long.parseLong(document.getValues("epochSecond")[0])) {
+        return Arrays.asList(CONFIG_PATHS,
+                CONFIG_EXCLUDE,
+                CONFIG_THREADS,
+                CONFIG_ELASTIC_HOSTNAMES,
+                CONFIG_ELASTIC_USERNAME,
+                CONFIG_ELASTIC_PASSWORD,
+                CONFIG_PROXY_HOST,
+                CONFIG_PROXY_PORT,
+                CONFIG_PROXY_USER,
+                CONFIG_PROXY_PASS,
+                CONFIG_DISABLE_SSL_CHECK,
+                CONFIG_CRON);
+    }
 
-					LOGGER.info("Sending : " + path);
+    @Override
+    public String getId() {
 
-					Map<String, Object> metadata = new HashMap<>();
+        return this.threadId;
+    }
 
-					try (FileInputStream fileInputStream = new FileInputStream(file)) {
-
-						byte[] bytes = IOUtils.toByteArray(fileInputStream);
-
-						metadata.put("reference", Base64.getEncoder().encodeToString(path.getBytes()));
-						metadata.put("epochSecond", file.lastModified());
-						metadata.put("path", path);
-						metadata.put("content", bytes);
-
-						consumer.accept(metadata);
-
-						writeDocumentToIndex(directory, metadata);
-
-					} catch (Exception e) {
-						LOGGER.error("Failed", e);
-					}
-
-				} else {
-					LOGGER.info("Already sent : " + path + " : " + file.lastModified());
-				}
-
-			} else {
-				LOGGER.info("Excluded path : " + path);
-			}
-
-		}
-
-	}
-
-	private synchronized Document getDocument(Directory directory, String path) {
-
-		try (IndexReader indexReader = DirectoryReader.open(directory)) {
-
-			IndexSearcher isearcher = new IndexSearcher(indexReader);
-			Query query = new TermQuery(new Term("reference", Base64.getEncoder().encodeToString(path.getBytes())));
-			TopDocs topDocs = isearcher.search(query, 1);
-
-			if (topDocs.totalHits.value > 0) {
-
-				ScoreDoc doc = topDocs.scoreDocs[0];
-				return isearcher.doc(doc.doc);
-			}
-
-		} catch (IOException e) {
-			LOGGER.error("Failed", e);
-		}
-
-		return null;
-
-	}
-
-	private synchronized void writeDocumentToIndex(Directory directory, Map<String, Object> metadata) throws IOException {
-
-		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(standardAnalyzer);
-		Document document = new Document();
-
-		try (IndexWriter iwriter = new IndexWriter(directory, indexWriterConfig)) {
-
-			metadata.entrySet().stream().filter(e -> !e.getKey().equals("content")).forEach(e -> {
-
-				if (e.getValue() instanceof String) {
-					document.add(new StringField(e.getKey(), (String) e.getValue(), Store.YES));
-
-				} else if (e.getValue() instanceof Long) {
-					document.add(new StringField(e.getKey(), ((Long) e.getValue()).toString(), Store.YES));
-				}
-			});
-
-			iwriter.addDocument(document);
-
-		} catch (StackOverflowError | Exception e1) {
-			LOGGER.error("Failed to write document to index", e1);
-		}
-
-	}
-
-	@Override
-	public void stop() {
-		stopped = true;
-	}
-
-	@Override
-	public void awaitStop() throws InterruptedException {
-		done.await();
-	}
-
-	/**
-	 * Returs a list of all configuration
-	 */
-	@Override
-	public Collection<PluginConfigSpec<?>> configSchema() {
-		return Arrays.asList(CONFIG_PATHS, CONFIG_DATA_FOLDER, CONFIG_EXCLUDE, CONFIG_THREAD_POOL_SIZE);
-	}
-
-	@Override
-	public String getId() {
-		return this.threadId;
-	}
 }

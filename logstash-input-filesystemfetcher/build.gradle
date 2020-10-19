@@ -50,20 +50,27 @@ shadowJar {
 }
 
 dependencies {
+
 	compile group: 'org.jsoup', name: 'jsoup', version: '1.12.1'
 	compile group: 'commons-io', name: 'commons-io', version: '2.6'
-    compile 'org.apache.commons:commons-lang3:3.7'
-   	compile group: 'ch.qos.logback', name: 'logback-classic', version: '1.2.3'
-   	compile group: 'org.slf4j', name: 'slf4j-api', version: '1.7.26'
-    compile 'org.apache.logging.log4j:log4j-api:2.9.1'
-    compile 'org.apache.logging.log4j:log4j-core:2.9.1'
    	compile group: 'com.fasterxml.jackson.core', name: 'jackson-databind', version: '2.0.1'
-   	compile group: 'org.apache.lucene', name: 'lucene-core', version: '8.2.0'
-	compile group: 'org.apache.lucene', name: 'lucene-queryparser', version: '8.2.0'
+   	compile group: 'org.quartz-scheduler', name: 'quartz', version: '2.3.2'
+   	compile group: 'org.codehaus.janino', name: 'janino', version: '3.1.0'
+   	
+   	compile group: 'org.elasticsearch.client', name: 'elasticsearch-rest-high-level-client', version: '6.8.8'
+   	
+   	compile group: 'org.apache.logging.log4j', name: 'log4j-api', version: '2.13.3'
+	compile group: 'org.apache.logging.log4j', name: 'log4j-core', version: '2.13.3'
+	compile group: 'ch.qos.logback', name: 'logback-classic', version: '1.2.3'
+   	compile group: 'org.slf4j', name: 'slf4j-api', version: '1.7.26'
+   	
+    testCompile 'junit:junit:4.12'
+    testCompile group: 'net.bytebuddy', name: 'byte-buddy-agent', version: '1.10.14'
+    testCompile 'org.jruby:jruby-complete:9.1.13.0'
+    testImplementation 'org.mockito:mockito-inline:2.23.4'
+    
     compile fileTree(dir: LOGSTASH_CORE_PATH, include: "**/logstash-core-?.?.?.jar")
 
-    testCompile 'junit:junit:4.12'
-    testCompile 'org.jruby:jruby-complete:9.1.13.0'
 }
 
 clean {
