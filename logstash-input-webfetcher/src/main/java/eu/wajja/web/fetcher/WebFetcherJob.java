@@ -358,6 +358,11 @@ public class WebFetcherJob implements Job {
 
                     elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.excluded, "excludedDataRegex");
 
+                } else if (result.isCached()) {
+
+                    LOGGER.info("Already sent url {}", result.getUrl());
+                    elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.included, "Document already sent to filter");
+
                 } else {
 
                     LOGGER.info("Sending url {}", result.getUrl());

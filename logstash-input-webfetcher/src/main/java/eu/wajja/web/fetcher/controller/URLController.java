@@ -55,7 +55,8 @@ public class URLController {
         result.setRootUrl(initialUrl);
         result.setCode(404);
         result.setRedirectUrls(redirectUrls);
-
+        result.setCached(false);
+        
         HttpURLConnection httpURLConnection = null;
 
         try {
@@ -92,6 +93,7 @@ public class URLController {
                     result.setRedirectUrls(redirectUrls);
 
                     if (isSameDocument(httpURLConnection, result)) {
+                        result.setCached(true);
                         return result;
                     }
 

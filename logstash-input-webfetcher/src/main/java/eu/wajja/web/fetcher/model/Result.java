@@ -19,7 +19,18 @@ public class Result {
     private String message;
     private byte[] content;
     private String contentType;
+    private boolean isCached = false;
     private Map<String, List<String>> headers = new HashMap<>();
+
+    public boolean isCached() {
+
+        return isCached;
+    }
+
+    public void setCached(boolean isCached) {
+
+        this.isCached = isCached;
+    }
 
     public Set<String> getRedirectUrls() {
 
