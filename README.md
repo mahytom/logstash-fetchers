@@ -46,8 +46,8 @@ No permissions are being extracted. This will be added at a later date.
 
 ```
 input {
-  filesystemfetcher {
-	paths => ["/my/data/directory"]
+  windowssharefetcher {
+	paths => ["//mynetwork/my_folder"]
 	exclude => ["(.*).docx","(.*).pdf"]
 	dataFolder => "/mypath/tofolder/"
 	threads => 10
