@@ -42,7 +42,9 @@ public class SambaFetcher implements Input {
     protected static final String PROPERTY_SMB_PASSWORD = "smbPassword";
     protected static final String PROPERTY_SMB_DOMAIN = "smbDomain";
     protected static final String PROPERTY_SMB_FOLDER = "smbFolder";
-
+    protected static final String PROPERTY_SLEEP = "sleep";
+    protected static final String PROPERTY_MAX_DOCUMENTS = "maxDocuments";
+    
     protected static final String PROPERTY_CRON = "cron";
     protected static final String PROPERTY_EXCLUDE = "exclude";
     protected static final String PROPERTY_CONSUMER = "consumer";
@@ -51,7 +53,9 @@ public class SambaFetcher implements Input {
     protected static final String PROPERTY_ELASTIC_PASSWORD = "elasticsearchPassword";
 
     public static final PluginConfigSpec<String> CONFIG_CRON = PluginConfigSpec.stringSetting(PROPERTY_CRON, null, false, false);
-
+    public static final PluginConfigSpec<Long> CONFIG_SLEEP = PluginConfigSpec.numSetting(PROPERTY_SLEEP, 1, false, false);
+    public static final PluginConfigSpec<Long> CONFIG_MAX_DOCUMENTS = PluginConfigSpec.numSetting(PROPERTY_MAX_DOCUMENTS, Long.MAX_VALUE, false, false);
+    
     public static final PluginConfigSpec<String> CONFIG_SMB_HOST = PluginConfigSpec.stringSetting(PROPERTY_SMB_HOST, null, false, false);
     public static final PluginConfigSpec<String> CONFIG_SMB_USERNAME = PluginConfigSpec.stringSetting(PROPERTY_SMB_USERNAME, null, false, false);
     public static final PluginConfigSpec<String> CONFIG_SMB_PASSWORD = PluginConfigSpec.stringSetting(PROPERTY_SMB_PASSWORD, null, false, false);
@@ -92,13 +96,15 @@ public class SambaFetcher implements Input {
         jobDataMap.put(PROPERTY_SMB_PASSWORD, config.get(CONFIG_SMB_PASSWORD));
         jobDataMap.put(PROPERTY_SMB_DOMAIN, config.get(CONFIG_SMB_DOMAIN));
         jobDataMap.put(PROPERTY_SMB_FOLDER, config.get(CONFIG_SMB_FOLDER));
-        
-        jobDataMap.put(PROPERTY_EXCLUDE, config.get(CONFIG_EXCLUDE).stream().map(url -> (String) url).collect(Collectors.toList()));
 
+        jobDataMap.put(PROPERTY_EXCLUDE, config.get(CONFIG_EXCLUDE).stream().map(url -> (String) url).collect(Collectors.toList()));
+        jobDataMap.put(PROPERTY_SLEEP, config.get(CONFIG_SLEEP));
+        jobDataMap.put(PROPERTY_MAX_DOCUMENTS, config.get(CONFIG_MAX_DOCUMENTS));
+        
         jobDataMap.put(PROPERTY_ELASTIC_HOSTNAMES, config.get(CONFIG_ELASTIC_HOSTNAMES).stream().map(url -> (String) url).collect(Collectors.toList()));
         jobDataMap.put(PROPERTY_ELASTIC_USERNAME, config.get(CONFIG_ELASTIC_USERNAME));
         jobDataMap.put(PROPERTY_ELASTIC_PASSWORD, config.get(CONFIG_ELASTIC_PASSWORD));
-        
+
         this.cron = config.get(CONFIG_CRON);
 
     }
@@ -162,6 +168,8 @@ public class SambaFetcher implements Input {
                 CONFIG_SMB_DOMAIN,
                 CONFIG_SMB_FOLDER,
                 CONFIG_EXCLUDE,
+                CONFIG_SLEEP,
+                CONFIG_MAX_DOCUMENTS,
                 CONFIG_ELASTIC_HOSTNAMES,
                 CONFIG_ELASTIC_USERNAME,
                 CONFIG_ELASTIC_PASSWORD,

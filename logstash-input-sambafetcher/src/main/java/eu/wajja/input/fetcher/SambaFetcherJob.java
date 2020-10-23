@@ -2,6 +2,7 @@ package eu.wajja.input.fetcher;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -20,7 +21,6 @@ import org.quartz.JobExecutionException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.hierynomus.msdtyp.ACL;
 import com.hierynomus.msdtyp.AccessMask;
 import com.hierynomus.msdtyp.SecurityDescriptor;
 import com.hierynomus.msdtyp.SecurityInformation;
@@ -36,7 +36,10 @@ import com.hierynomus.smbj.session.Session;
 import com.hierynomus.smbj.share.DiskShare;
 import com.hierynomus.smbj.share.File;
 import com.sun.jna.platform.win32.Advapi32Util;
+import com.sun.jna.platform.win32.Advapi32Util.Account;
 
+import eu.wajja.input.fetcher.config.Command;
+import eu.wajja.input.fetcher.config.MetadataConstant;
 import eu.wajja.input.fetcher.elasticsearch.ElasticSearchService;
 
 public class SambaFetcherJob implements Job {
@@ -45,6 +48,11 @@ public class SambaFetcherJob implements Job {
 
     private List<String> excludedUrls;
     private ElasticSearchService elasticSearchService;
+    private Long sleep;
+    private Long maxDocuments;
+    private Long documentCount;
+    private String smbDomain;
+    private String shareFolder;
 
     @SuppressWarnings("unchecked")
     @Override
@@ -53,11 +61,16 @@ public class SambaFetcherJob implements Job {
         JobDataMap dataMap = context.getJobDetail().getJobDataMap();
         Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(SambaFetcher.PROPERTY_CONSUMER);
 
-        String smbDomain = (String) dataMap.get(SambaFetcher.PROPERTY_SMB_DOMAIN);
+        this.smbDomain = (String) dataMap.get(SambaFetcher.PROPERTY_SMB_DOMAIN);
         String smbFolder = (String) dataMap.get(SambaFetcher.PROPERTY_SMB_FOLDER);
+        
         String smbHost = (String) dataMap.get(SambaFetcher.PROPERTY_SMB_HOST);
         String smbPassword = (String) dataMap.get(SambaFetcher.PROPERTY_SMB_PASSWORD);
         String smbUsername = (String) dataMap.get(SambaFetcher.PROPERTY_SMB_USERNAME);
+
+        this.sleep = (Long) dataMap.get(SambaFetcher.PROPERTY_SLEEP);
+        this.maxDocuments = (Long) dataMap.get(SambaFetcher.PROPERTY_MAX_DOCUMENTS);
+        this.documentCount = 0l;
 
         List<String> hostnames = (List<String>) dataMap.get(SambaFetcher.PROPERTY_ELASTIC_HOSTNAMES);
         excludedUrls = (List<String>) dataMap.get(SambaFetcher.PROPERTY_EXCLUDE);
@@ -68,7 +81,7 @@ public class SambaFetcherJob implements Job {
         elasticSearchService = new ElasticSearchService(hostnames, username, password);
 
         SMBClient client = new SMBClient();
-        String index = Base64.getEncoder().encodeToString(smbFolder.getBytes()).toLowerCase();
+        String index = "logstash_smb_fetcher_" + Base64.getEncoder().encodeToString(smbFolder.getBytes()).toLowerCase();
         elasticSearchService.checkIndex(index);
 
         try (Connection connection = client.connect(smbHost)) {
@@ -77,21 +90,21 @@ public class SambaFetcherJob implements Job {
             Session session = connection.authenticate(ac);
 
             String startPath = "";
-            String shareFolder = smbFolder;
+            this.shareFolder = smbFolder;
 
             if (smbFolder.contains("\\")) {
 
                 String[] splitPath = smbFolder.split("\\\\");
 
                 startPath = smbFolder.substring(splitPath[0].length() + 1);
-                shareFolder = splitPath[0];
+                this.shareFolder = splitPath[0];
 
             }
 
             LOGGER.info("startPath : {}", startPath);
-            LOGGER.info("shareFolder : {}", shareFolder);
+            LOGGER.info("shareFolder : {}", this.shareFolder);
 
-            try (DiskShare diskShare = (DiskShare) session.connectShare(shareFolder)) {
+            try (DiskShare diskShare = (DiskShare) session.connectShare(this.shareFolder)) {
                 parseFile(diskShare, index, startPath, consumer);
             }
         } catch (IOException e) {
@@ -106,6 +119,15 @@ public class SambaFetcherJob implements Job {
 
     private void parseFile(DiskShare diskShare, String index, String fileName, Consumer<Map<String, Object>> consumer) {
 
+        if (this.documentCount >= this.maxDocuments) {
+            return;
+        }
+        
+        if(excludedUrls != null && excludedUrls.stream().anyMatch(ex -> fileName.matches(ex))){
+            LOGGER.info("Skipping : {}", fileName);
+            return;
+        }
+
         FileAllInformation fileInformation = diskShare.getFileInformation(fileName);
 
         if (!fileInformation.getStandardInformation().isDirectory()) {
@@ -113,39 +135,25 @@ public class SambaFetcherJob implements Job {
             LOGGER.info("File : {}", fileName);
             Long modifiedDate = fileInformation.getBasicInformation().getChangeTime().toEpochMillis();
 
-            if (!elasticSearchService.documentExists(index, fileName, modifiedDate) && (excludedUrls == null || excludedUrls.stream().noneMatch(ex -> fileName.endsWith(ex)))) {
+            if (!elasticSearchService.documentExists(index, fileName, modifiedDate)) {
 
-            
-                File smbFile = diskShare.openFile(fileName, EnumSet.of(AccessMask.GENERIC_READ, AccessMask.ACCESS_SYSTEM_SECURITY), null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null);
+                File smbFile = diskShare.openFile(fileName, EnumSet.of(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null);
 
                 try (InputStream stream = smbFile.getInputStream()) {
 
-                    Set<SecurityInformation> securityInfo = new HashSet<>();
-                    securityInfo.add(SecurityInformation.DACL_SECURITY_INFORMATION);
-                    securityInfo.add(SecurityInformation.SACL_SECURITY_INFORMATION);
-
-                    SecurityDescriptor ss = smbFile.getSecurityInformation(securityInfo);
-
-                    ACL dacl = ss.getDacl();
-                    ACL sacl = ss.getSacl();
-
+                    byte[] bytesArray = IOUtils.toByteArray(stream);
                     Map<String, Object> metadata = new HashMap<>();
 
-                    if (dacl != null) {
-                        metadata.put("aclGroups", dacl.getAces().stream().map(ACE::getSid).map(sid -> Advapi32Util.getAccountBySid(sid.toString()).name).collect(Collectors.toList()));
-                    }
+                    mapSMBSecurity(diskShare, fileName, metadata);
 
-                    if (sacl != null) {
-                        metadata.put("aclUsers", sacl.getAces().stream().map(ACE::getSid).map(sid -> Advapi32Util.getAccountBySid(sid.toString()).name).collect(Collectors.toList()));
-                    }
-
-                    metadata.put("reference", Base64.getEncoder().encodeToString(fileName.getBytes()));
-                    metadata.put("url", fileName);
-                    metadata.put("epochSecond", modifiedDate);
-                    metadata.put("path", fileName);
-                    metadata.put("content", IOUtils.toByteArray(stream));
+                    metadata.put(MetadataConstant.METADATA_COMMAND, Command.ADD.toString());
+                    metadata.put(MetadataConstant.METADATA_REFERENCE, Base64.getEncoder().encodeToString(fileName.getBytes()));
+                    metadata.put(MetadataConstant.METADATA_URL, "\\\\" + smbDomain + "\\" + this.shareFolder + "\\" + fileName);
+                    metadata.put(MetadataConstant.METADATA_EPOCH, modifiedDate);
+                    metadata.put(MetadataConstant.METADATA_CONTENT, Base64.getEncoder().encodeToString(bytesArray));
 
                     consumer.accept(metadata);
+                    this.documentCount++;
 
                     elasticSearchService.addDocument(index, fileName, modifiedDate);
 
@@ -163,6 +171,45 @@ public class SambaFetcherJob implements Job {
 
         }
 
+        try {
+            Thread.sleep(sleep);
+
+        } catch (InterruptedException e) {
+            LOGGER.info("Failed to sleep", e);
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private void mapSMBSecurity(DiskShare diskShare, String fileName, Map<String, Object> metadata) {
+
+        try {
+
+            Set<SecurityInformation> securityInfo = new HashSet<>();
+            securityInfo.add(SecurityInformation.DACL_SECURITY_INFORMATION);
+            SecurityDescriptor ss = diskShare.getSecurityInfo(fileName, securityInfo);
+
+            if (ss.getDacl() != null) {
+
+                List<Account> accounts = ss.getDacl().getAces().stream().map(ACE::getSid).map(sid -> Advapi32Util.getAccountBySid(sid.toString())).collect(Collectors.toList());
+                List<String> aclGroups = new ArrayList<>();
+                List<String> aclUsers = new ArrayList<>();
+
+                for (Account account : accounts) {
+
+                    if (account.accountType == 2) {
+                        aclGroups.add(account.name);
+                    } else {
+                        aclUsers.add(account.name);
+                    }
+                }
+
+                metadata.put(MetadataConstant.METADATA_ACL_GROUPS, aclGroups);
+                metadata.put(MetadataConstant.METADATA_ACL_USERS, aclUsers);
+            }
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to retrieve permissions", e);
+        }
     }
 
 }
