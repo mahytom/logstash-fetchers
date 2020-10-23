@@ -24,6 +24,7 @@ import com.hierynomus.msdtyp.ACL;
 import com.hierynomus.msdtyp.AccessMask;
 import com.hierynomus.msdtyp.SecurityDescriptor;
 import com.hierynomus.msdtyp.SecurityInformation;
+import com.hierynomus.msdtyp.ace.ACE;
 import com.hierynomus.msfscc.fileinformation.FileAllInformation;
 import com.hierynomus.msfscc.fileinformation.FileIdBothDirectoryInformation;
 import com.hierynomus.mssmb2.SMB2CreateDisposition;
@@ -75,11 +76,23 @@ public class SambaFetcherJob implements Job {
             AuthenticationContext ac = new AuthenticationContext(smbUsername, smbPassword.toCharArray(), smbDomain);
             Session session = connection.authenticate(ac);
 
-            try (DiskShare diskShare = (DiskShare) session.connectShare(smbFolder)) {
+            String startPath = "";
+            String shareFolder = smbFolder;
 
-                List<String> files = diskShare.list("").stream().filter(x -> !x.getFileName().endsWith(".")).map(FileIdBothDirectoryInformation::getFileName).collect(Collectors.toList());
-                files.stream().forEach(fileName -> parseFile(diskShare, index, fileName, consumer));
+            if (smbFolder.contains("\\")) {
 
+                String[] splitPath = smbFolder.split("\\\\");
+
+                startPath = smbFolder.substring(splitPath[0].length() + 1);
+                shareFolder = splitPath[0];
+
+            }
+
+            LOGGER.info("startPath : {}", startPath);
+            LOGGER.info("shareFolder : {}", shareFolder);
+
+            try (DiskShare diskShare = (DiskShare) session.connectShare(shareFolder)) {
+                parseFile(diskShare, index, startPath, consumer);
             }
         } catch (IOException e) {
             e.printStackTrace();
@@ -93,16 +106,17 @@ public class SambaFetcherJob implements Job {
 
     private void parseFile(DiskShare diskShare, String index, String fileName, Consumer<Map<String, Object>> consumer) {
 
-        if (diskShare.fileExists(fileName)) {
+        FileAllInformation fileInformation = diskShare.getFileInformation(fileName);
+
+        if (!fileInformation.getStandardInformation().isDirectory()) {
 
             LOGGER.info("File : {}", fileName);
-
-            FileAllInformation fileInformation = diskShare.getFileInformation(fileName);
             Long modifiedDate = fileInformation.getBasicInformation().getChangeTime().toEpochMillis();
 
             if (!elasticSearchService.documentExists(index, fileName, modifiedDate) && (excludedUrls == null || excludedUrls.stream().noneMatch(ex -> fileName.endsWith(ex)))) {
 
-                File smbFile = diskShare.openFile(fileName, EnumSet.of(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null);
+            
+                File smbFile = diskShare.openFile(fileName, EnumSet.of(AccessMask.GENERIC_READ, AccessMask.ACCESS_SYSTEM_SECURITY), null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null);
 
                 try (InputStream stream = smbFile.getInputStream()) {
 
@@ -110,7 +124,7 @@ public class SambaFetcherJob implements Job {
                     securityInfo.add(SecurityInformation.DACL_SECURITY_INFORMATION);
                     securityInfo.add(SecurityInformation.SACL_SECURITY_INFORMATION);
 
-                    SecurityDescriptor ss = diskShare.getSecurityInfo(fileName, securityInfo);
+                    SecurityDescriptor ss = smbFile.getSecurityInformation(securityInfo);
 
                     ACL dacl = ss.getDacl();
                     ACL sacl = ss.getSacl();
@@ -118,11 +132,11 @@ public class SambaFetcherJob implements Job {
                     Map<String, Object> metadata = new HashMap<>();
 
                     if (dacl != null) {
-                        metadata.put("aclGroups", dacl.getAces().stream().map(ace -> ace.getSid()).map(sid -> Advapi32Util.getAccountBySid(sid.toString()).name).collect(Collectors.toList()));
+                        metadata.put("aclGroups", dacl.getAces().stream().map(ACE::getSid).map(sid -> Advapi32Util.getAccountBySid(sid.toString()).name).collect(Collectors.toList()));
                     }
 
                     if (sacl != null) {
-                        metadata.put("aclUsers", sacl.getAces().stream().map(ace -> ace.getSid()).map(sid -> Advapi32Util.getAccountBySid(sid.toString()).name).collect(Collectors.toList()));
+                        metadata.put("aclUsers", sacl.getAces().stream().map(ACE::getSid).map(sid -> Advapi32Util.getAccountBySid(sid.toString()).name).collect(Collectors.toList()));
                     }
 
                     metadata.put("reference", Base64.getEncoder().encodeToString(fileName.getBytes()));
@@ -140,7 +154,7 @@ public class SambaFetcherJob implements Job {
                 }
             }
 
-        } else if (diskShare.folderExists(fileName)) {
+        } else {
 
             LOGGER.info("Folder : {}", fileName);
 
