@@ -12,7 +12,7 @@ public class SchedulerBuilder {
 
 	private static final Logger LOGGER = LoggerFactory.getLogger(SchedulerBuilder.class);
 
-	private static final String DEFAULT_INSTANCE_ID = "LOGSTASH_WEB_FETCHER";
+	private static final String DEFAULT_INSTANCE_ID = "LOGSTASH_SAMBA_FETCHER";
 	private static Scheduler scheduler;
 
 	public static Scheduler getScheduler() {

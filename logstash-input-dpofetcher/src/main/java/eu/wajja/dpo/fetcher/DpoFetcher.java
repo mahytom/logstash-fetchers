@@ -68,7 +68,7 @@ public class DpoFetcher implements Input {
     protected static final String PROPERTY_ELASTIC_USERNAME = "elasticsearchUsername";
     protected static final String PROPERTY_ELASTIC_PASSWORD = "elasticsearchPassword";
 
-    public static final String GROUP_NAME = "group001";
+    public static final String GROUP_NAME = "DPO-FETCHER-GROUP";
 
     public static final PluginConfigSpec<List<Object>> CONFIG_URLS = PluginConfigSpec.arraySetting(PROPERTY_URLS);
     public static final PluginConfigSpec<List<Object>> CONFIG_EXCLUDE_DATA = PluginConfigSpec.arraySetting(PROPERTY_EXCLUDE_DATA, new ArrayList<>(), false, false);
