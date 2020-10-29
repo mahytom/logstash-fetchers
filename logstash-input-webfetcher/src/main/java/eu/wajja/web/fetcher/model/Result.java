@@ -20,7 +20,18 @@ public class Result {
     private byte[] content;
     private String contentType;
     private boolean isCached = false;
+    private Set<String> childUrls = new HashSet<>();
     private Map<String, List<String>> headers = new HashMap<>();
+
+    public Set<String> getChildUrls() {
+
+        return childUrls;
+    }
+
+    public void setChildUrls(Set<String> childUrls) {
+
+        this.childUrls = childUrls;
+    }
 
     public boolean isCached() {
 

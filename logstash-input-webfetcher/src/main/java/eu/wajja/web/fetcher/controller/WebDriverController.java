@@ -5,6 +5,8 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.openqa.selenium.By;
@@ -18,93 +20,152 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import eu.wajja.web.fetcher.exception.WebDriverException;
-import eu.wajja.web.fetcher.model.Result;
+import eu.wajja.web.fetcher.model.WebDriverResult;
 
 public class WebDriverController {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(WebDriverController.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(WebDriverController.class);
 
-	public byte[] getURL(String url, String chromeDriver, String waitForCssSelector, Integer maxWaitForCssSelector) throws MalformedURLException, WebDriverException {
+    public WebDriverResult getURL(String url, String chromeDriver, String waitForCssSelector, Integer maxWaitForCssSelector) throws MalformedURLException, WebDriverException {
 
-		WebDriver webDriver = null;
+        WebDriverResult webDriverResult = new WebDriverResult();
+        WebDriver webDriver = getWebDriver(chromeDriver);
 
-		if (StringUtils.isEmpty(chromeDriver)) {
+        try {
 
-			throw new WebDriverException("You need to specify a valid chrome driver. Either the path to the executable or a browserless/chrome instance");
+            webDriver.get(url);
 
-		} else if (chromeDriver.startsWith("http")) {
+            if (waitForCssSelector != null) {
 
-			ChromeOptions chromeOptions = new ChromeOptions();
-			chromeOptions.addArguments("--headless");
-			chromeOptions.addArguments("--no-sandbox");
+                List<WebElement> webElement = webDriver.findElements(By.cssSelector(waitForCssSelector));
+                int x = 0;
 
-			webDriver = new RemoteWebDriver(new URL(chromeDriver), chromeOptions);
+                while (webElement.isEmpty()) {
 
-		} else {
+                    Thread.sleep(1000);
+                    webElement = webDriver.findElements(By.cssSelector(waitForCssSelector));
+                    LOGGER.info("Waiting for css selector {} to appear on page {}", waitForCssSelector, url);
 
-			Path chrome = Paths.get(chromeDriver);
-			Boolean isExecutable = chrome.toFile().setExecutable(true);
+                    if (x > maxWaitForCssSelector) {
+                        LOGGER.info("Could not find css selector {} on page {}", waitForCssSelector, url);
+                        break;
+                    }
 
-			if (isExecutable) {
-				LOGGER.info("set {} to be executable", chromeDriver);
-			}
+                    x++;
 
-			System.setProperty("webdriver.chrome.driver", chrome.toAbsolutePath().toString());
+                }
 
-			ChromeOptions chromeOptions = new ChromeOptions();
-			chromeOptions.addArguments("--headless");
-			chromeOptions.addArguments("--no-sandbox");
-			chromeOptions.addArguments("--disable-dev-shm-usage");
+            }
 
-			webDriver = new ChromeDriver(chromeOptions);
+            /*
+             * Extract the content
+             */
 
-			// https://github.com/seleniumhq/selenium-google-code-issue-archive/issues/27
-			((JavascriptExecutor) webDriver).executeScript("window.alert = function(msg) { }");
-			((JavascriptExecutor) webDriver).executeScript("window.confirm = function(msg) { }");
+            String content = webDriver.getPageSource();
 
-		}
+            if (content == null || content.isEmpty()) {
+                LOGGER.error("Current url {} is empty or null", url);
+            } else {
+                webDriverResult.setBytes(content.getBytes());
+            }
 
-		try {
+            /*
+             * Find all child urls
+             */
+            List<WebElement> webElements = webDriver.findElements(By.tagName("a"));
 
-			webDriver.get(url);
+            Set<String> childUrls = webElements.stream().filter(h -> h.getAttribute("href") != null).map(h -> h.getAttribute("href")).collect(Collectors.toSet());
+            Set<String> unparsedJavascriptChildUrls = webElements.stream()
+                    .filter(h -> h.isDisplayed() && h.isEnabled())
+                    .filter(h -> h.getAttribute("href") == null)
+                    .map(WebElement::getText).collect(Collectors.toSet());
 
-			if (waitForCssSelector != null) {
+            webDriver.close();
 
-				List<WebElement> webElement = webDriver.findElements(By.cssSelector(waitForCssSelector));
-				int x = 0;
+            for (String childUrlText : unparsedJavascriptChildUrls) {
 
-				while (webElement.isEmpty()) {
+                WebDriver webDriverForChild = getWebDriver(chromeDriver);
 
-					Thread.sleep(1000);
-					webElement = webDriver.findElements(By.cssSelector(waitForCssSelector));
-					LOGGER.info("Waiting for css selector {} to appear on page {}", waitForCssSelector, url);
+                try {
 
-					if (x > maxWaitForCssSelector) {
-						LOGGER.info("Could not find css selector {} on page {}", waitForCssSelector, url);
-						break;
-					}
+                    webDriverForChild.get(url);
+                    List<WebElement> webElementsChild = webDriverForChild.findElements(By.tagName("a"));
 
-					x++;
+                    WebElement webElement = webElementsChild.stream()
+                            .filter(h -> h.getAttribute("href") == null)
+                            .filter(h -> h.getText().equals(childUrlText))
+                            .findFirst().orElse(null);
 
-				}
+                    if (webElement != null) {
 
-			}
+                        webElement.click();
+                        String childUrl = webDriverForChild.getCurrentUrl();
+                        LOGGER.info("Javascript child url detected {}", childUrl);
 
-			String content = webDriver.getPageSource();
+                        childUrls.add(childUrl);
+                    }
 
-			if (content == null || content.isEmpty()) {
-				LOGGER.error("Current url {} is empty or null", url);
-			} else {
-				return content.getBytes();
-			}
+                } finally {
 
-		} catch (Exception e) {
-			LOGGER.error("Failed to retrieve page {}", url);
-		} finally {
-			webDriver.close();
-		}
+                    webDriverForChild.close();
+                }
+            }
 
-		return null;
-	}
+            webDriverResult.setUrls(childUrls);
+
+        } catch (Exception e) {
+            LOGGER.error("Failed to retrieve page {}", url);
+        } finally {
+
+            if (webDriver != null) {
+                webDriver.close();
+            }
+        }
+
+        return webDriverResult;
+    }
+
+    private WebDriver getWebDriver(String chromeDriver) throws WebDriverException, MalformedURLException {
+
+        WebDriver webDriver = null;
+
+        if (StringUtils.isEmpty(chromeDriver)) {
+
+            throw new WebDriverException("You need to specify a valid chrome driver. Either the path to the executable or a browserless/chrome instance");
+
+        } else if (chromeDriver.startsWith("http")) {
+
+            ChromeOptions chromeOptions = new ChromeOptions();
+            chromeOptions.addArguments("--headless");
+            chromeOptions.addArguments("--no-sandbox");
+
+            webDriver = new RemoteWebDriver(new URL(chromeDriver), chromeOptions);
+
+        } else {
+
+            Path chrome = Paths.get(chromeDriver);
+            Boolean isExecutable = chrome.toFile().setExecutable(true);
+
+            if (isExecutable) {
+                LOGGER.info("set {} to be executable", chromeDriver);
+            }
+
+            System.setProperty("webdriver.chrome.driver", chrome.toAbsolutePath().toString());
+
+            ChromeOptions chromeOptions = new ChromeOptions();
+            chromeOptions.addArguments("--headless");
+            chromeOptions.addArguments("--no-sandbox");
+            chromeOptions.addArguments("--disable-dev-shm-usage");
+
+            webDriver = new ChromeDriver(chromeOptions);
+
+            // https://github.com/seleniumhq/selenium-google-code-issue-archive/issues/27
+            ((JavascriptExecutor) webDriver).executeScript("window.alert = function(msg) { }");
+            ((JavascriptExecutor) webDriver).executeScript("window.confirm = function(msg) { }");
+
+        }
+
+        return webDriver;
+    }
 
 }

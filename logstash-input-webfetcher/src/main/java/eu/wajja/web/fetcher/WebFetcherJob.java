@@ -391,11 +391,18 @@ public class WebFetcherJob implements Job {
 
                     if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
 
-                        String bodyHtml = IOUtils.toString(result.getContent(), StandardCharsets.UTF_8.name());
-                        org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
-                        Elements elements = document.getElementsByAttribute("href");
+                        if (result.getChildUrls().isEmpty()) {
 
-                        includedChildPages = elements.stream().map(e -> e.attr("href")).collect(Collectors.toSet());
+                            String bodyHtml = IOUtils.toString(result.getContent(), StandardCharsets.UTF_8.name());
+                            org.jsoup.nodes.Document document = Jsoup.parse(bodyHtml);
+                            Elements elements = document.getElementsByAttribute("href");
+
+                            includedChildPages = elements.stream().map(e -> e.attr("href")).collect(Collectors.toSet());
+
+                        } else {
+                            includedChildPages = result.getChildUrls();
+
+                        }
 
                     } else if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("xml")) {
 

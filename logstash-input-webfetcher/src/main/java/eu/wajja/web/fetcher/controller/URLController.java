@@ -18,6 +18,7 @@ import org.slf4j.LoggerFactory;
 
 import eu.wajja.web.fetcher.elasticsearch.ElasticSearchService;
 import eu.wajja.web.fetcher.model.Result;
+import eu.wajja.web.fetcher.model.WebDriverResult;
 
 public class URLController {
 
@@ -124,8 +125,10 @@ public class URLController {
                     if (chromeDriver == null) {
                         result.setContent(downloadContent(currentUrl));
                     } else {
-                        byte[] bytes = webDriverController.getURL(result.getUrl(), chromeDriver, waitForCssSelector, maxWaitForCssSelector);
-                        result.setContent(bytes);
+                       
+                        WebDriverResult webDriverResult = webDriverController.getURL(result.getUrl(), chromeDriver, waitForCssSelector, maxWaitForCssSelector);
+                        result.setContent(webDriverResult.getBytes());
+                        result.setChildUrls(webDriverResult.getUrls());
                     }
 
                 }
@@ -273,17 +276,6 @@ public class URLController {
         if (httpURLConnection != null) {
             httpURLConnection.disconnect();
         }
-    }
-
-    private byte[] getInputStream(HttpURLConnection httpURLConnection) throws IOException {
-
-        try (InputStream inputStream = httpURLConnection.getInputStream()) {
-            return IOUtils.toByteArray(inputStream);
-        } catch (IOException e) {
-            LOGGER.error("Failed to retrive url {}", httpURLConnection.getURL().toString(), e);
-        }
-
-        return new byte[0];
     }
 
     public URL createUrl(String currentUrl) throws MalformedURLException {

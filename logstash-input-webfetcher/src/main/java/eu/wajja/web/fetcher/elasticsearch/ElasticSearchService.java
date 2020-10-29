@@ -6,6 +6,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -71,6 +72,7 @@ public class ElasticSearchService {
     private static final String STATUS = "status";
     private static final String SUB_STATUS = "subStatus";
     private static final String JOB_ID = "jobId";
+    private static final String CHILD_URLS = "childUrls";
 
     private static final String MAPPINGS = "mappings";
     private static final String TYPE = "type";
@@ -257,6 +259,7 @@ public class ElasticSearchService {
             contentBuilder.field(JOB_ID, jobId);
             contentBuilder.field(REASON, message);
             contentBuilder.field(ETAG, result.geteTag());
+            contentBuilder.field(CHILD_URLS, objectMapper.writeValueAsString(result.getChildUrls()));
             contentBuilder.endObject();
 
             indexRequest.source(contentBuilder);
@@ -400,12 +403,17 @@ public class ElasticSearchService {
                 }
             }
 
+            String childUrls = (String) source.get(CHILD_URLS);
+            if (childUrls != null) {
+                result.setChildUrls(objectMapper.readValue(childUrls, Set.class));
+            }
+            
             result.setCode((Integer) source.get(CODE));
             result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
             result.setLength((Integer) source.get(CONTENT_SIZE));
             result.setMessage((String) source.get(MESSAGE));
             result.seteTag((String) source.get(ETAG));
-
+           
         }
 
         return result;
@@ -441,7 +449,7 @@ public class ElasticSearchService {
                 if (documentWithJobIdExist) {
                     return;
                 }
-                
+
                 updateStatus(url, index, Status.queue, SubStatus.included, "Found on parent page");
                 return;
 
@@ -493,6 +501,11 @@ public class ElasticSearchService {
             String headerString = (String) source.get(HEADERS);
             if (headerString != null) {
                 result.setHeaders(objectMapper.readValue(headerString, Map.class));
+            }
+
+            String childUrls = (String) source.get(CHILD_URLS);
+            if (childUrls != null) {
+                result.setChildUrls(objectMapper.readValue(childUrls, Set.class));
             }
 
             result.setLength((Integer) source.get(CONTENT_SIZE));
@@ -553,7 +566,7 @@ public class ElasticSearchService {
             booleanQuery.must().add(QueryBuilders.termQuery(JOB_ID, jobId));
             booleanQuery.must().add(QueryBuilders.termQuery(STATUS, Status.processed));
             booleanQuery.must().add(QueryBuilders.termQuery(SUB_STATUS, SubStatus.included));
-            
+
             sourceBuilder.query(booleanQuery);
             searchRequest.source(sourceBuilder);
 
