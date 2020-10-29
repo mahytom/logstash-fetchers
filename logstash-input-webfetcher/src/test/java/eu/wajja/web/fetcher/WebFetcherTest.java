@@ -44,7 +44,6 @@ public class WebFetcherTest {
 		configValues.put(WebFetcher.CONFIG_CRON.name(), properties.get(WebFetcher.PROPERTY_CRON));
 		configValues.put(WebFetcher.CONFIG_TIMEOUT.name(), new Long((String) properties.get(WebFetcher.PROPERTY_TIMEOUT)));
 		configValues.put(WebFetcher.CONFIG_MAX_PAGES.name(), new Long((String) properties.get(WebFetcher.PROPERTY_MAX_PAGES)));
-		configValues.put(WebFetcher.CONFIG_DISABLE_SSL_CHECK.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_SSL_CHECK)));
 		configValues.put(WebFetcher.CONFIG_CHROME_DRIVERS.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_CHROME_DRIVERS), String[].class)));
 		configValues.put(WebFetcher.CONFIG_ELASTIC_HOSTNAMES.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES), String[].class)));
 		configValues.put(WebFetcher.CONFIG_REINDEX.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_REINDEX)));
@@ -54,7 +53,7 @@ public class WebFetcherTest {
 		configValues.put(WebFetcher.CONFIG_ENABLE_REGEX.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_ENABLE_REGEX)));
 		configValues.put(WebFetcher.CONFIG_ENABLE_DELETE.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_ENABLE_DELETE)));
 		configValues.put(WebFetcher.CONFIG_ROOT_URL.name(),  properties.get(WebFetcher.PROPERTY_ROOT_URL));
-//		configValues.put(WebFetcher.CONFIG_MAX_DEPTH.name(), new Long((String) properties.get(WebFetcher.PROPERTY_MAX_DEPTH)));
+		configValues.put(WebFetcher.CONFIG_ENABLE_JSLINKS.name(), true);
 		
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);

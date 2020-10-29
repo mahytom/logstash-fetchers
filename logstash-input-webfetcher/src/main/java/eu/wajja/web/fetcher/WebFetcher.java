@@ -45,7 +45,6 @@ public class WebFetcher implements Input {
     protected static final String PROPERTY_TIMEOUT = "timeout";
     protected static final String PROPERTY_MAX_DEPTH = "maxdepth";
     protected static final String PROPERTY_MAX_PAGES = "maxpages";
-    protected static final String PROPERTY_SSL_CHECK = "sslcheck";
     protected static final String PROPERTY_REFRESH_INTERVAL = "refreshInterval";
     protected static final String PROPERTY_PROXY_HOST = "proxyHost";
     protected static final String PROPERTY_PROXY_PORT = "proxyPort";
@@ -66,6 +65,7 @@ public class WebFetcher implements Input {
     protected static final String PROPERTY_ENABLE_DELETE = "enableDelete";
     protected static final String PROPERTY_ENABLE_REGEX = "enableRegex";
     protected static final String PROPERTY_ENABLE_HASHTAG = "enableHashtag";
+    protected static final String PROPERTY_ENABLE_JSLINKS = "enabledJsLinks";
     
     protected static final String PROPERTY_ELASTIC_HOSTNAMES = "elasticsearchHostnames";
     protected static final String PROPERTY_ELASTIC_USERNAME = "elasticsearchUsername";
@@ -80,7 +80,6 @@ public class WebFetcher implements Input {
     public static final PluginConfigSpec<Long> CONFIG_TIMEOUT = PluginConfigSpec.numSetting(PROPERTY_TIMEOUT, 8000);
     public static final PluginConfigSpec<Long> CONFIG_MAX_DEPTH = PluginConfigSpec.numSetting(PROPERTY_MAX_DEPTH, 0);
     public static final PluginConfigSpec<Long> CONFIG_MAX_PAGES = PluginConfigSpec.numSetting(PROPERTY_MAX_PAGES, 1000);
-    public static final PluginConfigSpec<Boolean> CONFIG_DISABLE_SSL_CHECK = PluginConfigSpec.booleanSetting(PROPERTY_SSL_CHECK, true);
     public static final PluginConfigSpec<Boolean> CONFIG_ENABLE_HASHTAG = PluginConfigSpec.booleanSetting(PROPERTY_ENABLE_HASHTAG, false);
     public static final PluginConfigSpec<Long> CONFIG_REFRESH_INTERVAL = PluginConfigSpec.numSetting(PROPERTY_REFRESH_INTERVAL, 86400l);
     public static final PluginConfigSpec<String> CONFIG_PROXY_HOST = PluginConfigSpec.stringSetting(PROPERTY_PROXY_HOST);
@@ -95,7 +94,8 @@ public class WebFetcher implements Input {
     public static final PluginConfigSpec<Boolean> CONFIG_REINDEX = PluginConfigSpec.booleanSetting(PROPERTY_REINDEX, false);
     public static final PluginConfigSpec<String> CONFIG_ROOT_URL = PluginConfigSpec.stringSetting(PROPERTY_ROOT_URL, null, false, false);
     public static final PluginConfigSpec<Boolean> CONFIG_ENABLE_REGEX = PluginConfigSpec.booleanSetting(PROPERTY_ENABLE_REGEX, false);
-
+    public static final PluginConfigSpec<Boolean> CONFIG_ENABLE_JSLINKS = PluginConfigSpec.booleanSetting(PROPERTY_ENABLE_JSLINKS, false);
+    
     public static final PluginConfigSpec<List<Object>> CONFIG_ELASTIC_HOSTNAMES = PluginConfigSpec.arraySetting(PROPERTY_ELASTIC_HOSTNAMES, new ArrayList<>(), false, false);
     public static final PluginConfigSpec<String> CONFIG_ELASTIC_USERNAME = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_USERNAME, null, false, false);
     public static final PluginConfigSpec<String> CONFIG_ELASTIC_PASSWORD = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_PASSWORD, null, false, false);
@@ -140,6 +140,7 @@ public class WebFetcher implements Input {
         jobDataMap.put(PROPERTY_READ_ROBOT, config.get(CONFIG_READ_ROBOT));
         jobDataMap.put(PROPERTY_ROOT_URL, config.get(CONFIG_ROOT_URL));
         jobDataMap.put(PROPERTY_ENABLE_HASHTAG, config.get(CONFIG_ENABLE_HASHTAG));
+        jobDataMap.put(PROPERTY_ENABLE_JSLINKS, config.get(CONFIG_ENABLE_JSLINKS));
         
         jobDataMap.put(PROPERTY_PROXY_HOST, config.get(CONFIG_PROXY_HOST));
         jobDataMap.put(PROPERTY_PROXY_PORT, config.get(CONFIG_PROXY_PORT));
@@ -229,7 +230,6 @@ public class WebFetcher implements Input {
     public Collection<PluginConfigSpec<?>> configSchema() {
 
         return Arrays.asList(CONFIG_URLS,
-                CONFIG_DISABLE_SSL_CHECK,
                 CONFIG_EXCLUDE_DATA,
                 CONFIG_EXCLUDE_LINK,
                 CONFIG_INCLUDE_LINK,
@@ -254,6 +254,7 @@ public class WebFetcher implements Input {
                 CONFIG_ELASTIC_USERNAME,
                 CONFIG_ELASTIC_PASSWORD,
                 CONFIG_ENABLE_CRAWL,
+                CONFIG_ENABLE_JSLINKS,
                 CONFIG_ENABLE_DELETE,
                 CONFIG_ENABLE_REGEX,
                 CONFIG_ENABLE_HASHTAG,

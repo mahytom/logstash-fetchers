@@ -20,125 +20,123 @@ import org.slf4j.LoggerFactory;
 
 public class ProxyController {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(ProxyController.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ProxyController.class);
 
-	private Proxy proxy = null;
-	private String proxyUser;
-	private String proxyPass;
-	private String proxyHost;
-	private Long proxyPort;
-	private Boolean disableSSLcheck;
+    private Proxy proxy = null;
+    private String proxyUser;
+    private String proxyPass;
+    private String proxyHost;
+    private Long proxyPort;
 
-	public ProxyController(String proxyUser, String proxyPass, String proxyHost, Long proxyPort, Boolean disableSSLcheck) {
+    public ProxyController(String proxyUser, String proxyPass, String proxyHost, Long proxyPort) {
 
-		this.proxyUser = proxyUser;
-		this.proxyPass = proxyPass;
-		this.proxyHost = proxyHost;
-		this.proxyPort = proxyPort;
-		this.disableSSLcheck = disableSSLcheck;
+        this.proxyUser = proxyUser;
+        this.proxyPass = proxyPass;
+        this.proxyHost = proxyHost;
+        this.proxyPort = proxyPort;
 
-		if (proxyUser != null && proxyPass != null) {
+        if (proxyUser != null && proxyPass != null) {
 
-			LOGGER.info("Initializing Proxy Security {}:{}", proxyHost, proxyPort);
-			Authenticator authenticator = new Authenticator() {
+            LOGGER.info("Initializing Proxy Security {}:{}", proxyHost, proxyPort);
+            Authenticator authenticator = new Authenticator() {
 
-				@Override
-				public PasswordAuthentication getPasswordAuthentication() {
+                @Override
+                public PasswordAuthentication getPasswordAuthentication() {
 
-					return new PasswordAuthentication(proxyUser, proxyPass.toCharArray());
-				}
-			};
+                    return new PasswordAuthentication(proxyUser, proxyPass.toCharArray());
+                }
+            };
 
-			Authenticator.setDefault(authenticator);
-		}
+            Authenticator.setDefault(authenticator);
+        }
 
-		if (proxyHost != null && proxyPort != null) {
+        if (proxyHost != null && proxyPort != null) {
 
-			LOGGER.info("Initializing Proxy {}:{}", proxyHost, proxyPort);
-			proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort.intValue()));
-		}
+            LOGGER.info("Initializing Proxy {}:{}", proxyHost, proxyPort);
+            proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort.intValue()));
+        }
 
-		if (!disableSSLcheck) {
+        TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
 
-			TrustManager[] trustAllCerts = new TrustManager[] { new X509TrustManager() {
-				public java.security.cert.X509Certificate[] getAcceptedIssuers() {
-					return null;
-				}
+            public java.security.cert.X509Certificate[] getAcceptedIssuers() {
 
-				public void checkClientTrusted(X509Certificate[] certs, String authType) {
-				}
+                return null;
+            }
 
-				public void checkServerTrusted(X509Certificate[] certs, String authType) {
-				}
-			} };
+            public void checkClientTrusted(X509Certificate[] certs, String authType) {}
 
-			try {
-				SSLContext sc = SSLContext.getInstance("SSL");
-				sc.init(null, trustAllCerts, new java.security.SecureRandom());
-				HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
+            public void checkServerTrusted(X509Certificate[] certs, String authType) {}
+        } };
 
-			} catch (NoSuchAlgorithmException | KeyManagementException e) {
-				LOGGER.error("Failed to set authentication cert trust", e);
-			}
+        try {
+            SSLContext sc = SSLContext.getInstance("SSL");
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            HttpsURLConnection.setDefaultSSLSocketFactory(sc.getSocketFactory());
 
-			HostnameVerifier allHostsValid = new HostnameVerifier() {
+        } catch (NoSuchAlgorithmException | KeyManagementException e) {
+            LOGGER.error("Failed to set authentication cert trust", e);
+        }
 
-				public boolean verify(String hostname, SSLSession session) {
-					return true;
-				}
-			};
+        HostnameVerifier allHostsValid = new HostnameVerifier() {
 
-			HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
+            public boolean verify(String hostname, SSLSession session) {
 
-		}
-	}
+                return true;
+            }
+        };
 
-	public Proxy getProxy() {
-		return proxy;
-	}
+        HttpsURLConnection.setDefaultHostnameVerifier(allHostsValid);
 
-	public String getProxyUser() {
-		return proxyUser;
-	}
+    }
 
-	public void setProxyUser(String proxyUser) {
-		this.proxyUser = proxyUser;
-	}
+    public Proxy getProxy() {
 
-	public String getProxyPass() {
-		return proxyPass;
-	}
+        return proxy;
+    }
 
-	public void setProxyPass(String proxyPass) {
-		this.proxyPass = proxyPass;
-	}
+    public String getProxyUser() {
 
-	public String getProxyHost() {
-		return proxyHost;
-	}
+        return proxyUser;
+    }
 
-	public void setProxyHost(String proxyHost) {
-		this.proxyHost = proxyHost;
-	}
+    public void setProxyUser(String proxyUser) {
 
-	public Long getProxyPort() {
-		return proxyPort;
-	}
+        this.proxyUser = proxyUser;
+    }
 
-	public void setProxyPort(Long proxyPort) {
-		this.proxyPort = proxyPort;
-	}
+    public String getProxyPass() {
 
-	public Boolean getDisableSSLcheck() {
-		return disableSSLcheck;
-	}
+        return proxyPass;
+    }
 
-	public void setDisableSSLcheck(Boolean disableSSLcheck) {
-		this.disableSSLcheck = disableSSLcheck;
-	}
+    public void setProxyPass(String proxyPass) {
 
-	public void setProxy(Proxy proxy) {
-		this.proxy = proxy;
-	}
+        this.proxyPass = proxyPass;
+    }
+
+    public String getProxyHost() {
+
+        return proxyHost;
+    }
+
+    public void setProxyHost(String proxyHost) {
+
+        this.proxyHost = proxyHost;
+    }
+
+    public Long getProxyPort() {
+
+        return proxyPort;
+    }
+
+    public void setProxyPort(Long proxyPort) {
+
+        this.proxyPort = proxyPort;
+    }
+
+    public void setProxy(Proxy proxy) {
+
+        this.proxy = proxy;
+    }
 
 }

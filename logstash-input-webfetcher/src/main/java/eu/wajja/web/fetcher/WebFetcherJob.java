@@ -109,8 +109,7 @@ public class WebFetcherJob implements Job {
             proxyController = new ProxyController(dataMap.getString(WebFetcher.PROPERTY_PROXY_USER),
                     dataMap.getString(WebFetcher.PROPERTY_PROXY_PASS),
                     dataMap.getString(WebFetcher.PROPERTY_PROXY_HOST),
-                    dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT),
-                    dataMap.getBoolean(WebFetcher.PROPERTY_SSL_CHECK));
+                    dataMap.getLong(WebFetcher.PROPERTY_PROXY_PORT));
         }
 
         boolean enableDelete = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_DELETE);
@@ -118,6 +117,7 @@ public class WebFetcherJob implements Job {
         boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
         boolean reindex = dataMap.getBoolean(WebFetcher.PROPERTY_REINDEX);
         boolean enableRegex = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_REGEX);
+        boolean enableJsLinks = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_JSLINKS);
 
         List<String> hostnames = (List<String>) dataMap.get(WebFetcher.PROPERTY_ELASTIC_HOSTNAMES);
 
@@ -140,7 +140,8 @@ public class WebFetcherJob implements Job {
                     dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT),
                     dataMap.getString(WebFetcher.PROPERTY_CRAWLER_REFERER),
                     waitForCssSelector,
-                    maxWaitForCssSelector.intValue());
+                    maxWaitForCssSelector.intValue(),
+                    enableJsLinks);
 
         }
 

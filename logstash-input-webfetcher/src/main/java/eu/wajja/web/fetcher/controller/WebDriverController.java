@@ -4,6 +4,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -15,6 +16,7 @@ import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.json.JsonException;
 import org.openqa.selenium.remote.RemoteWebDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,10 +28,13 @@ public class WebDriverController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(WebDriverController.class);
 
-    public WebDriverResult getURL(String url, String chromeDriver, String waitForCssSelector, Integer maxWaitForCssSelector) throws MalformedURLException, WebDriverException {
+    public WebDriverResult getURL(String url, String chromeDriver, String waitForCssSelector, Integer maxWaitForCssSelector, boolean enableJsLinks) throws MalformedURLException, WebDriverException {
 
         WebDriverResult webDriverResult = new WebDriverResult();
         WebDriver webDriver = getWebDriver(chromeDriver);
+
+        Set<String> childUrls = new HashSet<>();
+        Set<String> unparsedJavascriptChildUrls = new HashSet<>();
 
         try {
 
@@ -74,55 +79,75 @@ public class WebDriverController {
              */
             List<WebElement> webElements = webDriver.findElements(By.tagName("a"));
 
-            Set<String> childUrls = webElements.stream().filter(h -> h.getAttribute("href") != null).map(h -> h.getAttribute("href")).collect(Collectors.toSet());
-            Set<String> unparsedJavascriptChildUrls = webElements.stream()
-                    .filter(h -> h.isDisplayed() && h.isEnabled())
+            childUrls = webElements.stream().filter(h -> h.getAttribute("href") != null).map(h -> h.getAttribute("href")).collect(Collectors.toSet());
+
+            unparsedJavascriptChildUrls = webElements.stream()
                     .filter(h -> h.getAttribute("href") == null)
                     .map(WebElement::getText).collect(Collectors.toSet());
-
-            webDriver.close();
-
-            for (String childUrlText : unparsedJavascriptChildUrls) {
-
-                WebDriver webDriverForChild = getWebDriver(chromeDriver);
-
-                try {
-
-                    webDriverForChild.get(url);
-                    List<WebElement> webElementsChild = webDriverForChild.findElements(By.tagName("a"));
-
-                    WebElement webElement = webElementsChild.stream()
-                            .filter(h -> h.getAttribute("href") == null)
-                            .filter(h -> h.getText().equals(childUrlText))
-                            .findFirst().orElse(null);
-
-                    if (webElement != null) {
-
-                        webElement.click();
-                        String childUrl = webDriverForChild.getCurrentUrl();
-                        LOGGER.info("Javascript child url detected {}", childUrl);
-
-                        childUrls.add(childUrl);
-                    }
-
-                } finally {
-
-                    webDriverForChild.close();
-                }
-            }
-
-            webDriverResult.setUrls(childUrls);
 
         } catch (Exception e) {
             LOGGER.error("Failed to retrieve page {}", url);
         } finally {
 
-            if (webDriver != null) {
-                webDriver.close();
+            try {
+                webDriver.quit();
+            } catch (JsonException e) {
+                LOGGER.warn("Failed to close webDriver");
             }
         }
 
+        if (enableJsLinks) {
+            Set<String> newChildUrls = getJsLinks(url, chromeDriver, unparsedJavascriptChildUrls);
+            childUrls.addAll(newChildUrls);
+        }
+
+        webDriverResult.setUrls(childUrls);
+
         return webDriverResult;
+    }
+
+    private Set<String> getJsLinks(String url, String chromeDriver, Set<String> unparsedJavascriptChildUrls) throws WebDriverException, MalformedURLException {
+
+        Set<String> childUrls = new HashSet<>();
+
+        for (String childUrlText : unparsedJavascriptChildUrls) {
+
+            WebDriver webDriverForChild = getWebDriver(chromeDriver);
+
+            try {
+
+                webDriverForChild.get(url);
+                List<WebElement> webElementsChild = webDriverForChild.findElements(By.tagName("a"));
+
+                WebElement webElement = webElementsChild.stream()
+                        .filter(h -> h.getAttribute("href") == null)
+                        .filter(h -> h.isDisplayed() && h.isEnabled())
+                        .filter(h -> h.getText().equals(childUrlText))
+                        .findFirst().orElse(null);
+
+                if (webElement != null) {
+
+                    webElement.click();
+                    String childUrl = webDriverForChild.getCurrentUrl();
+                    LOGGER.info("Javascript child url detected {}", childUrl);
+
+                    childUrls.add(childUrl);
+
+                }
+
+            } catch (Exception e) {
+                LOGGER.error("Failed to retrieve child page {}", childUrlText);
+            } finally {
+
+                try {
+                    webDriverForChild.quit();
+                } catch (JsonException e) {
+                    LOGGER.warn("Failed to close webDriverForChild");
+                }
+            }
+        }
+
+        return childUrls;
     }
 
     private WebDriver getWebDriver(String chromeDriver) throws WebDriverException, MalformedURLException {

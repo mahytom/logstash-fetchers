@@ -28,12 +28,13 @@ public class URLController {
     private Long timeout;
     private String userAgent;
     private String referer;
+    private Boolean enableJsLinks;
     private String waitForCssSelector;
     private Integer maxWaitForCssSelector;
     private ElasticSearchService elasticSearchService;
     private WebDriverController webDriverController = new WebDriverController();
 
-    public URLController(ElasticSearchService elasticSearchService, Proxy proxy, Long timeout, String userAgent, String referer, String waitForCssSelector, Integer maxWaitForCssSelector) {
+    public URLController(ElasticSearchService elasticSearchService, Proxy proxy, Long timeout, String userAgent, String referer, String waitForCssSelector, Integer maxWaitForCssSelector, Boolean enableJsLinks) {
 
         this.proxy = proxy;
         this.timeout = timeout;
@@ -42,6 +43,7 @@ public class URLController {
         this.waitForCssSelector = waitForCssSelector;
         this.maxWaitForCssSelector = maxWaitForCssSelector;
         this.elasticSearchService = elasticSearchService;
+        this.enableJsLinks = enableJsLinks;
     }
 
     public Result getURL(String index, String currentUrl, String initialUrl, String chromeDriver) {
@@ -126,7 +128,7 @@ public class URLController {
                         result.setContent(downloadContent(currentUrl));
                     } else {
                        
-                        WebDriverResult webDriverResult = webDriverController.getURL(result.getUrl(), chromeDriver, waitForCssSelector, maxWaitForCssSelector);
+                        WebDriverResult webDriverResult = webDriverController.getURL(result.getUrl(), chromeDriver, waitForCssSelector, maxWaitForCssSelector, enableJsLinks);
                         result.setContent(webDriverResult.getBytes());
                         result.setChildUrls(webDriverResult.getUrls());
                     }
