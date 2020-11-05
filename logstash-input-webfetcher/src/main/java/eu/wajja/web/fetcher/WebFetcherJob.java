@@ -428,6 +428,8 @@ public class WebFetcherJob implements Job {
 
                     String simpleUrlString = baseUrl.replace(HTTP, "").replace(HTTPS, "");
 
+                    LOGGER.debug("Checking children {}", includedChildPages);
+                    
                     includedChildPages = includedChildPages.stream()
                             .filter(href -> !href.equals("/") && !href.startsWith("//"))
                             .map(urlStream -> getUrlString(urlStream, result.getUrl(), baseUrl))
@@ -437,6 +439,8 @@ public class WebFetcherJob implements Job {
                             .sorted()
                             .collect(Collectors.toSet());
 
+                    LOGGER.debug("Checked children {}", includedChildPages);
+                    
                     includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, baseUrl, jobId, index));
                 }
 
@@ -488,7 +492,7 @@ public class WebFetcherJob implements Job {
             }
 
             if (!enableHashtag && urlString.contains("#")) {
-                urlString = urlString.substring(0, urlString.indexOf("#") - 1);
+                urlString = urlString.substring(0, urlString.indexOf("#"));
             }
 
         } catch (MalformedURLException e) {
