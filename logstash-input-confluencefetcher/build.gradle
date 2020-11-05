@@ -59,12 +59,8 @@ shadowJar {
 }
 
 dependencies {
-   	// Dependencies for SOAP
-   	compile group: 'org.apache.axis', name: 'axis', version: '1.4'
-	compile group: 'javax.xml', name: 'jaxrpc-api', version: '1.1'
-	compile group: 'xerces', name: 'xercesImpl', version: '2.12.0'
-	compile group: 'javax.xml.soap', name: 'javax.xml.soap-api', version: '1.3.5'
-	compile group: 'wsdl4j', name: 'wsdl4j', version: '1.6.2'
+   	// Dependencies for JSON-RCP
+   	compile group: 'org.apache.httpcomponents', name: 'httpclient', version: '4.5.13'
 	
 	// Dependencies for REST
 	compile group: 'com.atlassian.confluence', name: 'confluence-rest-client', version: '7.3.3'

@@ -14,12 +14,26 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.http.HttpEntity;
+import org.apache.http.HttpHeaders;
+import org.apache.http.HttpResponse;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.client.HttpClient;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.ByteArrayEntity;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.HttpClientBuilder;
+import org.apache.http.message.BasicHttpResponse;
+import org.apache.http.util.EntityUtils;
 import org.codehaus.jackson.map.ObjectMapper;
 import org.quartz.Job;
 import org.quartz.JobDataMap;
@@ -43,7 +57,6 @@ import com.atlassian.confluence.api.model.pagination.SimplePageRequest;
 import com.atlassian.confluence.api.model.people.Person;
 import com.atlassian.confluence.api.model.people.Subject;
 import com.atlassian.confluence.api.model.people.SubjectType;
-import com.atlassian.confluence.api.model.permissions.ContentRestriction;
 import com.atlassian.confluence.api.model.permissions.ContentRestrictionsPageResponse;
 import com.atlassian.confluence.api.model.permissions.OperationKey;
 import com.atlassian.confluence.rest.client.RemoteAttachmentServiceImpl;
@@ -51,15 +64,10 @@ import com.atlassian.confluence.rest.client.RemoteContentRestrictionServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteContentServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteSpaceService.RemoteSpaceFinder;
 import com.atlassian.confluence.rest.client.RemoteSpaceServiceImpl;
-import com.atlassian.confluence.rest.client.authentication.AuthenticatedWebResourceProvider;
-import com.atlassian.confluence.rpc.soap.beans.RemoteContentPermission;
-import com.atlassian.confluence.rpc.soap.beans.RemoteSpacePermissionSet;
-import com.google.common.util.concurrent.ListeningExecutorService;
-import com.google.common.util.concurrent.MoreExecutors;
 
 import eu.wajja.input.fetcher.enums.Command;
 import eu.wajja.input.fetcher.model.Permissions;
-import eu.wajja.input.fetcher.soap.confluence.ConfluenceSoapService;
+import eu.wajja.input.fetcher.model.SpacePermissions;
 import eu.wajja.input.fetcher.utils.UrlHelper;
 
 public class ConfluenceDataFetcher implements Job {
@@ -168,29 +176,41 @@ public class ConfluenceDataFetcher implements Job {
         List<String> spacesToCrawl = (List<String>) dataMap.getOrDefault("sites", new ArrayList<>());
         List<Space> spaces = getSpaces(spacesToCrawl);
 
+        CredentialsProvider provider = new BasicCredentialsProvider();
+        UsernamePasswordCredentials credentials = new UsernamePasswordCredentials(username, password);
+        provider.setCredentials(AuthScope.ANY, credentials);
+
+        HttpClient client = HttpClientBuilder.create().setDefaultCredentialsProvider(provider).build();
+
+        String auth = username + ":" + password;
+        byte[] encodedAuth = Base64.getEncoder().encode(auth.getBytes());
+        String authHeader = "Basic " + new String(encodedAuth);
+
         spaces.stream().forEach(space -> {
 
             try {
 
-                LOGGER.info("Searching Space Permissions For Space {}", space);
+                LOGGER.info("Searching JSON-RPC Space Permissions For Space {}", space);
 
-                List<String> spacePermissions = new ArrayList<>();
+                String getSpacePermissionSetUrl = url + "/rpc/json-rpc/confluenceservice-v2/getSpacePermissionSet";
+                HttpPost httppost = new HttpPost(getSpacePermissionSetUrl);
 
-                if (dataMap.containsKey("soapService") && dataMap.containsKey("soapToken")) {
+                String xml = "[\"" + space.getKey() + "\", \"VIEWSPACE\"]";
+                HttpEntity entity = new ByteArrayEntity(xml.getBytes());
+                httppost.setEntity(entity);
 
-                    LOGGER.info("Searching SOAP Space Permissions For Space {}", space);
-                    
-                    ConfluenceSoapService soapService = (ConfluenceSoapService) dataMap.get("soapService");
-                    String soapToken = dataMap.getString("soapToken");
+                httppost.setHeader(HttpHeaders.CONTENT_TYPE, "application/json");
+                httppost.setHeader(HttpHeaders.AUTHORIZATION, authHeader);
 
-                    RemoteSpacePermissionSet remoteSpacePermissionSet = soapService.getSpacePermissionSet(soapToken, space.getKey(), "VIEWSPACE");
-                    RemoteContentPermission[] remoteContentPermissions = remoteSpacePermissionSet.getSpacePermissions();
+                HttpResponse response = client.execute(httppost);
+                int httpResponseCode = response.getStatusLine().getStatusCode();
 
-                    for (RemoteContentPermission remoteContentPermission : remoteContentPermissions) {
-                        if (remoteContentPermission.getGroupName() != null) {
-                            spacePermissions.add(remoteContentPermission.getGroupName());
-                        }
-                    }
+                SpacePermissions spacePermissions = new SpacePermissions();
+
+                if (httpResponseCode == 200) {
+                
+                    String result = EntityUtils.toString(response.getEntity());
+                    spacePermissions = objectMapper.readValue(result, SpacePermissions.class);
                 }
 
                 if (dataSpaceExclude != null && !dataSpaceExclude.isEmpty() && dataSpaceExclude.stream().anyMatch(x -> space.getName().toLowerCase().matches(x.toLowerCase()))) {
@@ -201,7 +221,7 @@ public class ConfluenceDataFetcher implements Job {
                 }
 
                 LOGGER.info("Finished Space Permissions For Space {}", space);
-                
+
                 /**
                  * Each space has an index, so we can keep track of previously
                  * ingested files
@@ -284,7 +304,7 @@ public class ConfluenceDataFetcher implements Job {
         return new HashMap<>();
     }
 
-    private void extractSpaceContent(Consumer<Map<String, Object>> consumer, String username, String password, String url, Space space, ContentStatus contentStatus, Command command, Map<String, String> historyMap, List<String> spacePermissions) {
+    private void extractSpaceContent(Consumer<Map<String, Object>> consumer, String username, String password, String url, Space space, ContentStatus contentStatus, Command command, Map<String, String> historyMap, SpacePermissions spacePermissions) {
 
         int size = 0;
         ContentType contentType = ContentType.PAGE;
@@ -535,7 +555,7 @@ public class ConfluenceDataFetcher implements Job {
 
     }
 
-    private Permissions addAllRestrictions(Content content, Command command, List<String> spacePermissions) {
+    private Permissions addAllRestrictions(Content content, Command command, SpacePermissions spacePermissions) {
 
         Permissions permissions = new Permissions();
 
@@ -547,7 +567,13 @@ public class ConfluenceDataFetcher implements Job {
                 content.getAncestors().stream().forEach(ancestor -> getContentPermissions(ancestor, permissions));
 
                 if (permissions.getGroups().isEmpty() && permissions.getUsers().isEmpty()) {
-                    permissions.getGroups().addAll(spacePermissions);
+
+                    Set<String> usernames = spacePermissions.getSpacePermissions().stream().filter(p -> p.getUserName() != null).map(p -> p.getUserName()).collect(Collectors.toSet());
+                    permissions.getUsers().addAll(usernames);
+
+                    Set<String> groups = spacePermissions.getSpacePermissions().stream().filter(p -> p.getGroupName() != null).map(p -> p.getGroupName()).collect(Collectors.toSet());
+                    permissions.getGroups().addAll(groups);
+
                 }
 
             }

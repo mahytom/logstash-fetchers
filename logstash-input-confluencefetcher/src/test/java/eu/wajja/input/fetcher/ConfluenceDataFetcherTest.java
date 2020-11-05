@@ -26,7 +26,6 @@ import org.quartz.JobDetail;
 import org.quartz.JobExecutionContext;
 import org.quartz.JobExecutionException;
 
-import com.atlassian.confluence.api.model.Expansion;
 import com.atlassian.confluence.api.model.content.Content;
 import com.atlassian.confluence.api.model.content.ContentStatus;
 import com.atlassian.confluence.api.model.content.ContentType;
@@ -45,14 +44,11 @@ import com.atlassian.confluence.rest.client.RemoteContentServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteContentServiceImpl.RemoteContentFinderImpl;
 import com.atlassian.confluence.rest.client.RemoteSpaceServiceImpl;
 import com.atlassian.confluence.rest.client.RemoteSpaceServiceImpl.RemoteSpaceFinderImpl;
-import com.atlassian.confluence.rpc.soap.beans.RemoteContentPermission;
-import com.atlassian.confluence.rpc.soap.beans.RemoteSpacePermissionSet;
 import com.atlassian.fugue.Option;
 import com.atlassian.sal.api.user.UserKey;
 import com.atlassian.util.concurrent.Promise;
 
 import eu.wajja.input.fetcher.controller.ConfluenceDataFetcher;
-import eu.wajja.input.fetcher.soap.confluence.ConfluenceSoapService;
 import eu.wajja.input.fetcher.utils.UrlHelper;
 
 @RunWith(MockitoJUnitRunner.class)
@@ -142,11 +138,6 @@ public class ConfluenceDataFetcherTest {
 	@Mock
 	private PageResponse<Content> pageContentAttachmentEmptyResponse;
 
-	@Mock
-	private ConfluenceSoapService confluenceSoapService;
-	
-	@Mock
-	private RemoteSpacePermissionSet remoteSpacePermissionSet;
 	
 	private Person person;
 	private JobDataMap jobDataMap = new JobDataMap();
@@ -156,7 +147,6 @@ public class ConfluenceDataFetcherTest {
 
 		Mockito.when(context.getJobDetail()).thenReturn(jobDetail);
 
-		jobDataMap.put("soapService", confluenceSoapService);
 		jobDataMap.put("remoteSpaceServiceImpl", remoteSpaceServiceImpl);
 		jobDataMap.put("remoteContentServiceImpl", remoteContentServiceImpl);
 		jobDataMap.put("remoteAttachmentServiceImpl", remoteAttachmentServiceImpl);
