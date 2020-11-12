@@ -100,7 +100,7 @@ public class RssPressCornerFetcherJob implements Job {
         for (String initialUrl : initialUrls) {
 
             String id = Base64.getEncoder().encodeToString(initialUrl.getBytes()).replace("/", "_");
-            String index = "logstash_web_fetcher_" + id.toLowerCase();
+            String index = "logstash_rss_presscorner_fetcher_" + id.toLowerCase();
             elasticSearchService.checkIndex(index);
 
             File dataFolder = new File(dataFolderLocation);
@@ -154,7 +154,7 @@ public class RssPressCornerFetcherJob implements Job {
 
                     for (int x = 0; nodeList.getLength() > x; x++) {
 
-                        String content = nodeList.item(x).getTextContent();
+                        String content = nodeList.item(x).getTextContent().toLowerCase();
                         String chromeThread = chromeThreads.get(threadCount);
 
                         boolean exists = elasticSearchService.existsInIndex(content, index);
@@ -167,7 +167,7 @@ public class RssPressCornerFetcherJob implements Job {
 
                                 try {
 
-                                    Result result = urlController.getURL(index, content, content, chromeThread);
+                                    Result result = urlController.getURL(index, content, initialUrl, chromeThread);
 
                                     LOGGER.info("Sending url {}", result.getUrl());
 
