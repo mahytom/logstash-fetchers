@@ -189,6 +189,10 @@ public class WebFetcherJob implements Job {
                 // Read the robot.txt first
                 robotService.checkRobot(chromeThreads, initialUrl, index, jobId);
 
+                // Rerun previously queued items first
+                fetchQueuedItems(consumer, chromeThreads, initialUrl, index);
+                elasticSearchService.flushIndex(index);
+                
                 // Start the actual fetch
                 fetchNewItems(consumer, chromeThreads, initialUrl, index);
                 elasticSearchService.flushIndex(index);
@@ -255,6 +259,55 @@ public class WebFetcherJob implements Job {
 
     }
 
+    private void fetchQueuedItems(Consumer<Map<String, Object>> consumer, List<String> chromeThreads, String initialUrl, String index) {
+
+        LOGGER.info("Starting queued items for thread : {}, url : {}", jobId, initialUrl);
+
+        String chromeDriver = chromeThreads.stream().findFirst().orElse(null);
+     
+        try {
+
+            // TODO : The index doesn't have the time to flush. so nothing is
+            // found in the
+            // next step. fix this at some point
+            Thread.sleep(1000);
+
+            LinkedList<Result> results = new LinkedList<>();
+            Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.queue);
+
+            while (!future.isDone()) {
+
+                while (!results.isEmpty()) {
+                    addNewThread(results.pop(), chromeThreads, consumer, index, true);
+                }
+
+                waitForThreads(initialUrl, 100);
+            }
+
+            while (!results.isEmpty()) {
+                addNewThread(results.pop(), chromeThreads, consumer, index, true);
+            }
+
+            waitForThreads(initialUrl);
+
+            if (maxPages == 0 || elasticSearchService.totalCountWithJobId(jobId, index) >= maxPages) {
+                return;
+            }
+
+            if (elasticSearchService.hasMoreItemsInQueued(index)) {
+                fetchNewItems(consumer, chromeThreads, initialUrl, index);
+            }
+
+        } catch (InterruptedException e) {
+            LOGGER.info("InterruptedException", e);
+            Thread.currentThread().interrupt();
+        }
+
+        LOGGER.info("Finished queued items for thread : {}, url : {}", jobId, initialUrl);
+
+    }
+
+    
     private void addNewThread(Result result, List<String> chromeThreads, Consumer<Map<String, Object>> consumer, String index, boolean checkChildren) {
 
         String resultUrl = result.getUrl();
@@ -385,7 +438,7 @@ public class WebFetcherJob implements Job {
                     elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.included, "Document sent to filter");
                 }
 
-                if (checkChildren && result != null && result.getContent() != null) {
+                if (checkChildren && result != null && result.getContent() != null && baseUrl != null) {
 
                     Map<String, List<String>> headers = result.getHeaders();
                     Set<String> includedChildPages = new HashSet<>();
@@ -429,7 +482,7 @@ public class WebFetcherJob implements Job {
                     String simpleUrlString = baseUrl.replace(HTTP, "").replace(HTTPS, "");
 
                     LOGGER.debug("Checking children {}", includedChildPages);
-                    
+
                     includedChildPages = includedChildPages.stream()
                             .filter(href -> !href.equals("/") && !href.startsWith("//"))
                             .map(urlStream -> getUrlString(urlStream, result.getUrl(), baseUrl))
@@ -440,7 +493,7 @@ public class WebFetcherJob implements Job {
                             .collect(Collectors.toSet());
 
                     LOGGER.debug("Checked children {}", includedChildPages);
-                    
+
                     includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, baseUrl, jobId, index));
                 }
 

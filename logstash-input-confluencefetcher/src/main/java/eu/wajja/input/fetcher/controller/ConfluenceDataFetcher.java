@@ -139,6 +139,7 @@ public class ConfluenceDataFetcher implements Job {
     private ThreadPoolExecutor executorService;
     private Long threads;
     private Long sleep;
+    private String excludeSpaceRegex;
 
     @SuppressWarnings("unchecked")
     @Override
@@ -166,7 +167,7 @@ public class ConfluenceDataFetcher implements Job {
         this.batchSize = (Long) dataMap.getOrDefault("batchSize", 10l);
         this.dataFolder = dataMap.getString("dataFolder");
         this.sleep = (Long) dataMap.get("sleep");
-
+        this.excludeSpaceRegex = dataMap.getString("excludeSpaceRegex");
         this.threads = (Long) dataMap.get("dataSyncThreadSize");
         this.executorService = (ThreadPoolExecutor) Executors.newFixedThreadPool(threads.intValue());
 
@@ -208,7 +209,7 @@ public class ConfluenceDataFetcher implements Job {
                 SpacePermissions spacePermissions = new SpacePermissions();
 
                 if (httpResponseCode == 200) {
-                
+
                     String result = EntityUtils.toString(response.getEntity());
                     spacePermissions = objectMapper.readValue(result, SpacePermissions.class);
                 }
@@ -629,8 +630,19 @@ public class ConfluenceDataFetcher implements Job {
 
             List<Space> spacesSearch = pageResponse.getResults().stream().collect(Collectors.toList());
 
-            LOGGER.info("Searching Confluence Spaces {}", spacesSearch);
-            spaces.addAll(spacesSearch);
+            if (excludeSpaceRegex == null) {
+                LOGGER.info("Searching Confluence Spaces {}", spacesSearch);
+                spaces.addAll(spacesSearch);
+
+            } else {
+
+                List<Space> filteredSpaces = spacesSearch.stream().filter(sit -> !sit.getKey().matches(excludeSpaceRegex)).collect(Collectors.toList());
+
+                if (!filteredSpaces.isEmpty()) {
+                    LOGGER.info("Searching Confluence Spaces {}", filteredSpaces);
+                    spaces.addAll(filteredSpaces);
+                }
+            }
 
             size = size + batchSize.intValue();
             pageRequest = new SimplePageRequest(size, batchSize.intValue());

@@ -24,79 +24,80 @@ import eu.wajja.web.fetcher.services.constants.MetadataConstant;
 
 public class ReindexService {
 
-	private static final Logger LOGGER = LoggerFactory.getLogger(ReindexService.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(ReindexService.class);
 
-	private ElasticSearchService elasticSearchService;
-	private List<String> excludedDataRegex;
-	private List<String> excludedLinkRegex;
+    private ElasticSearchService elasticSearchService;
+    private List<String> excludedDataRegex;
+    private List<String> excludedLinkRegex;
 
-	public ReindexService(ElasticSearchService elasticSearchService, List<String> excludedDataRegex, List<String> excludedLinkRegex) {
-		this.elasticSearchService = elasticSearchService;
-		this.excludedDataRegex = excludedDataRegex;
-		this.excludedLinkRegex = excludedLinkRegex;
-	}
+    public ReindexService(ElasticSearchService elasticSearchService, List<String> excludedDataRegex, List<String> excludedLinkRegex) {
 
-	public void reIndex(Consumer<Map<String, Object>> consumer, String jobId, String initialUrl, String index) {
+        this.elasticSearchService = elasticSearchService;
+        this.excludedDataRegex = excludedDataRegex;
+        this.excludedLinkRegex = excludedLinkRegex;
+    }
 
-		LOGGER.info("Starting full reindex for thread : {}, url : {}", jobId, initialUrl);
+    public void reIndex(Consumer<Map<String, Object>> consumer, String jobId, String initialUrl, String index) {
 
-		LinkedList<Result> results = new LinkedList<>();
-		Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.processed, SubStatus.included);
-		List<Result> queueItems = new ArrayList<>();
+        LOGGER.info("Starting full reindex for thread : {}, url : {}", jobId, initialUrl);
 
-		while (!future.isDone()) {
+        LinkedList<Result> results = new LinkedList<>();
+        Future<Boolean> future = elasticSearchService.getAsyncUrls(index, results, Status.processed, SubStatus.included);
+        List<Result> queueItems = new ArrayList<>();
 
-			while (!results.isEmpty()) {
-				queueItems.add(results.pop());
-			}
+        while (!future.isDone()) {
 
-			queueItems.parallelStream().forEach(result -> sendResultToFilter(consumer, index, result));
-			queueItems.clear();
-		}
+            while (!results.isEmpty()) {
+                queueItems.add(results.pop());
+            }
 
-		results.parallelStream().forEach(result -> sendResultToFilter(consumer, index, result));
+            queueItems.parallelStream().forEach(result -> sendResultToFilter(consumer, index, result));
+            queueItems.clear();
+        }
 
-		LOGGER.info("Finished full reindex for thread : {}, url : {}", jobId, initialUrl);
-	}
+        results.parallelStream().forEach(result -> sendResultToFilter(consumer, index, result));
 
-	private void sendResultToFilter(Consumer<Map<String, Object>> consumer, String index, Result result) {
+        LOGGER.info("Finished full reindex for thread : {}, url : {}", jobId, initialUrl);
+    }
 
-		byte[] bytes = result.getContent();
+    private void sendResultToFilter(Consumer<Map<String, Object>> consumer, String index, Result result) {
 
-		if (bytes == null || bytes.length == 0) {
+        byte[] bytes = result.getContent();
 
-			LOGGER.warn("Cannot Reindex, content is empty, url {}", result.getUrl());
-			elasticSearchService.updateStatus(result.getUrl(), index, Status.failed, SubStatus.excluded, "content is empty");
+        if (bytes == null || bytes.length == 0) {
 
-		} else if (excludedLinkRegex.stream().anyMatch(ex -> result.getUrl().matches(ex))) {
+            LOGGER.warn("Cannot Reindex, content is empty, url {}", result.getUrl());
+            elasticSearchService.updateStatus(result.getUrl(), index, Status.failed, SubStatus.excluded, "content is empty");
 
-			LOGGER.info("Url matched excludedLinkRegex, ignoring {}", result.getUrl());
-			elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex");
+        } else if (excludedLinkRegex.stream().anyMatch(ex -> result.getUrl().matches(ex))) {
 
-		} else if (excludedDataRegex.stream().anyMatch(ex -> result.getUrl().matches(ex))) {
+            LOGGER.info("Url matched excludedLinkRegex, ignoring {}", result.getUrl());
+            elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex");
 
-			LOGGER.info("Url matched excludedDataRegex, ignoring {}", result.getUrl());
-			elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.excluded, "regex excludedDataRegex");
+        } else if (excludedDataRegex.stream().anyMatch(ex -> result.getUrl().matches(ex))) {
 
-		} else {
+            LOGGER.info("Url matched excludedDataRegex, ignoring {}", result.getUrl());
+            elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.excluded, "regex excludedDataRegex");
 
-			LOGGER.info("Reindexing url {}", result.getUrl());
+        } else {
 
-			Map<String, Object> metadata = new HashMap<>();
-			metadata.put(MetadataConstant.METADATA_URL, result.getUrl());
-			metadata.put(MetadataConstant.METADATA_INDEX, index);
-			metadata.put(MetadataConstant.METADATA_CONTENT_TYPE, result.getContentType());
-			metadata.put(MetadataConstant.METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
-			metadata.put(MetadataConstant.METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
-			metadata.put(MetadataConstant.METADATA_UUID, UUID.randomUUID().toString());
-			metadata.put(MetadataConstant.METADATA_STATUS, 200);
-			metadata.put(MetadataConstant.METADATA_CONTEXT, result.getRootUrl());
-			metadata.put(MetadataConstant.METADATA_COMMAND, Command.ADD.toString());
-			metadata.put(MetadataConstant.METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
+            LOGGER.info("Reindexing url {}", result.getUrl());
 
-			consumer.accept(metadata);
-			elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.included, "Document sent to filter");
+            Map<String, Object> metadata = new HashMap<>();
+            metadata.put(MetadataConstant.METADATA_URL, result.getUrl());
+            metadata.put(MetadataConstant.METADATA_INDEX, index);
+            metadata.put(MetadataConstant.METADATA_CONTENT_TYPE, result.getContentType());
+            metadata.put(MetadataConstant.METADATA_REFERENCE, Base64.getEncoder().encodeToString(result.getUrl().getBytes()));
+            metadata.put(MetadataConstant.METADATA_EPOCH, LocalDateTime.now().toEpochSecond(ZoneOffset.UTC));
+            metadata.put(MetadataConstant.METADATA_UUID, UUID.randomUUID().toString());
+            metadata.put(MetadataConstant.METADATA_STATUS, 200);
+            metadata.put(MetadataConstant.METADATA_CONTEXT, result.getRootUrl());
+            metadata.put(MetadataConstant.METADATA_COMMAND, Command.ADD.toString());
+            metadata.put(MetadataConstant.METADATA_CONTENT, Base64.getEncoder().encodeToString(bytes));
 
-		}
-	}
+            consumer.accept(metadata);
+            elasticSearchService.updateStatus(result.getUrl(), index, Status.processed, SubStatus.included, "Document sent to filter");
+
+        }
+    }
 }

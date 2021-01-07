@@ -76,6 +76,7 @@ public class ConfluenceFetcher implements Input {
     public static final PluginConfigSpec<Long> CONFIG_ATTACHMENTS_MAX_FILE_SIZE = PluginConfigSpec.numSetting("dataAttachmentsMaxSize");
     public static final PluginConfigSpec<List<Object>> CONFIG_PAGE_EXCLUDE = PluginConfigSpec.arraySetting("dataPageExclude", new ArrayList<>(), false, false);
     public static final PluginConfigSpec<List<Object>> CONFIG_SPACE_EXCLUDE = PluginConfigSpec.arraySetting("dataSpaceExclude", new ArrayList<>(), false, false);
+    public static final PluginConfigSpec<String> CONFIG_EXCLUDE_SPACE_REGEX = PluginConfigSpec.stringSetting("excludeSpaceRegex");
 
     public static final String GROUP_NAME = "confluencefetcherGroup";
 
@@ -93,6 +94,7 @@ public class ConfluenceFetcher implements Input {
     private String dataFolder;
     private Long dataSyncThreadSize;
     private Long sleep;
+    private String excludeSpaceRegex;
 
     private List<String> dataAttachmentsInclude;
     private List<String> dataAttachmentsExclude;
@@ -130,7 +132,7 @@ public class ConfluenceFetcher implements Input {
         this.spaces = config.get(CONFIG_SPACES).stream().map(spc -> (String) spc).collect(Collectors.toList());
         this.cronData = config.get(CONFIG_DATA_CRON);
         this.dataSyncThreadSize = config.get(CONFIG_DATA_THREADS);
-
+        this.excludeSpaceRegex = config.get(CONFIG_EXCLUDE_SPACE_REGEX);
         this.dataAttachmentsInclude = config.get(CONFIG_ATTACHMENTS_INCLUDE).stream().map(spc -> (String) spc).collect(Collectors.toList());
         this.dataAttachmentsExclude = config.get(CONFIG_ATTACHMENTS_EXCLUDE).stream().map(spc -> (String) spc).collect(Collectors.toList());
         this.dataAttachmentsMaxSize = config.get(CONFIG_ATTACHMENTS_MAX_FILE_SIZE);
@@ -205,7 +207,7 @@ public class ConfluenceFetcher implements Input {
                     newJobDataMap.put("dataFolder", this.dataFolder);
                     newJobDataMap.put("dataSyncThreadSize", this.dataSyncThreadSize);
                     newJobDataMap.put("sleep", this.sleep);
-
+                    newJobDataMap.put("excludeSpaceRegex", this.excludeSpaceRegex);
                     String uuid = UUID.randomUUID().toString();
 
                     JobDetail job = JobBuilder.newJob(ConfluenceDataFetcher.class)
@@ -281,6 +283,7 @@ public class ConfluenceFetcher implements Input {
                 CONFIG_ATTACHMENTS_INCLUDE,
                 CONFIG_ATTACHMENTS_EXCLUDE,
                 CONFIG_ATTACHMENTS_MAX_FILE_SIZE,
+                CONFIG_EXCLUDE_SPACE_REGEX,
                 CONFIG_PAGE_EXCLUDE,
                 CONFIG_SPACE_EXCLUDE);
     }
