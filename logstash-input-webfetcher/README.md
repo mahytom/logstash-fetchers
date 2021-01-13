@@ -1,30 +1,12 @@
-# Logstash Web Fetchers Plugin
+# Logstash Web Fetcher Plugin
 
 
 ## Web Plugin
 
-This plugin will crawl websites and download all information ready to be indexed.
-The data is sent as a byte[] and all headers are added to the hashmap send to elastic.
-A tracking mecanism is built using an elasticsearch instance
+This plugin will crawl websites and download all information ready to be indexed. 
+The data is sent as a byte[] and all headers are added to the hashmap send to elastic. 
+A tracking mecanism is built using an elasticsearch instance. 
 Downloading is done with browserless/chrome (https://hub.docker.com/r/browserless/chrome/)
-
-### Configuration
-
-```
-input {
-  webfetcher {
-	urls => ["http://yousite.eu/"]
-	exclude => ["css","js"]
-	dataFolder => "/mypath/tofolder/"
-	threads => 10
-	refreshInterval => 300
-	proxyHost => "proxy"
-	proxyPort => 80
-	proxyUser => "proxyUser"
-	proxyPass => "proxyPass"
-  }
-}
-```
 
 ### Properties
 
@@ -36,9 +18,9 @@ input {
 | elasticsearchHostnames  | true  | NA  | Array of elasticsearch hostnames |
 | elasticsearchUsername  | false  | NA  | Elasticsearch username |
 | elasticsearchPassword  | false  | NA  | Elasticsearch password |
-| excludeData  | false  | empty array  | Array if regexes where matched url is crawled but not indexed |
-| excludeLink  | false  | empty array  | Array if regexes where matched url is not crawled and not indexed |
-| includeLink  | false  | empty array  | Array if regexes where only matched url is crawled |
+| excludeData  | false  | empty array  | Array of regexes where matched url is crawled but not indexed |
+| excludeLink  | false  | empty array  | Array of regexes where matched url is not crawled and not indexed |
+| includeLink  | false  | empty array  | Array of regexes where only matched url is crawled |
 | timeout  | false  | 8000  | Timeout or url |
 | maxdepth  | false  | NA  | Max site depth to crawl |
 | maxpages  | false  | 1000  | Max number of pages to crawl |
