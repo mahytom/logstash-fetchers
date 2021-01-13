@@ -19,7 +19,6 @@ No processing of the data is done so it can be processed , as is, by the logstas
 | dataFolder  | true  | NA  | Where to store the data folder, its a local queue |
 | userSyncCron  | true  | NA  | Cron when to start the user sync |
 | dataSyncCron  | true  | NA  | Cron when to start the data sync |
-
 | enableUserSync  | false  | true  | Enable sync all Users |
 | userSyncBatchSize  | false  | 1000  | User Batch Size |
 | userSyncThreadSize  | false  | 1000  | User Thread Size |
