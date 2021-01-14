@@ -37,15 +37,9 @@ buildscript {
 
 repositories {
     mavenCentral()
-      maven {
-      	url "https://maven.atlassian.com/content/repositories/atlassian-public/"
-      }
-      maven {
-      	url "https://repo.spring.io/plugins-release/"
-      }
-      maven {
-      	url "https://repo.spring.io/libs-release/"
-      }
+    maven {
+      url "https://maven.atlassian.com/content/repositories/atlassian-public/"
+    }
 }
 
 task wrapper(type: Wrapper) {
