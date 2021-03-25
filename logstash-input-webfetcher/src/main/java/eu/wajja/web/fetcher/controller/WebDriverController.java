@@ -86,7 +86,7 @@ public class WebDriverController {
                     .map(WebElement::getText).collect(Collectors.toSet());
 
         } catch (Exception e) {
-            LOGGER.error("Failed to retrieve page {}", url);
+            LOGGER.error("Failed to retrieve page {}", url, e);
         } finally {
 
             try {
