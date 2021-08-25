@@ -28,6 +28,7 @@ import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.http.entity.ContentType;
 import org.jsoup.Jsoup;
 import org.jsoup.select.Elements;
 import org.quartz.DisallowConcurrentExecution;
@@ -41,6 +42,7 @@ import org.w3c.dom.Document;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
 
+import eu.wajja.web.fetcher.content.ContentAnalyzer;
 import eu.wajja.web.fetcher.controller.ProxyController;
 import eu.wajja.web.fetcher.controller.URLController;
 import eu.wajja.web.fetcher.elasticsearch.ElasticSearchService;
@@ -192,7 +194,7 @@ public class WebFetcherJob implements Job {
                 // Rerun previously queued items first
                 fetchQueuedItems(consumer, chromeThreads, initialUrl, index);
                 elasticSearchService.flushIndex(index);
-                
+
                 // Start the actual fetch
                 fetchNewItems(consumer, chromeThreads, initialUrl, index);
                 elasticSearchService.flushIndex(index);
@@ -264,7 +266,7 @@ public class WebFetcherJob implements Job {
         LOGGER.info("Starting queued items for thread : {}, url : {}", jobId, initialUrl);
 
         String chromeDriver = chromeThreads.stream().findFirst().orElse(null);
-     
+
         try {
 
             // TODO : The index doesn't have the time to flush. so nothing is
@@ -307,7 +309,6 @@ public class WebFetcherJob implements Job {
 
     }
 
-    
     private void addNewThread(Result result, List<String> chromeThreads, Consumer<Map<String, Object>> consumer, String index, boolean checkChildren) {
 
         String resultUrl = result.getUrl();
@@ -392,6 +393,7 @@ public class WebFetcherJob implements Job {
 
                 Result result = urlController.getURL(index, url, baseUrl, chromeDriver);
                 Thread.sleep(sleep);
+                ContentAnalyzer contentAnalyer = ContentAnalyzer.getInstance(result);
 
                 if (result == null || result.getContent() == null) {
 
@@ -411,6 +413,13 @@ public class WebFetcherJob implements Job {
                     LOGGER.info("Excluding url {} because it matched data regex {}", result.getUrl(), excluded);
 
                     elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.excluded, "excludedDataRegex");
+
+                } else if (contentAnalyer != null && contentAnalyer.isExcluded()) {
+
+                    // Exclude because of the document's content
+
+                    LOGGER.info("Excluding url {} because {}", result.getUrl(), contentAnalyer.getExclusionReason());
+                    elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.excluded, contentAnalyer.getExclusionReason());
 
                 } else if (result.isCached()) {
 
