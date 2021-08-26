@@ -18,16 +18,18 @@ public class HtmlAnalyzer implements ContentAnalyzer {
     private static final Logger LOGGER = LoggerFactory.getLogger(HtmlAnalyzer.class);
 
     private Result result;
+    private boolean readRobot;
 
-    HtmlAnalyzer(Result result) {
+    HtmlAnalyzer(Result result, boolean readRobot) {
 
         this.result = result;
+        this.readRobot = readRobot;
     }
 
     @Override
     public boolean isExcluded() {
 
-        if (nonNull(result.getContent())) {
+        if (readRobot && nonNull(result.getContent())) {
             try {
                 Document doc = Jsoup.parse(IOUtils.toString(result.getContent(), StandardCharsets.UTF_8.name()));
                 return !doc.select("meta[name=robots][content*=noindex]").isEmpty();
