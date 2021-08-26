@@ -82,6 +82,7 @@ public class WebFetcherJob implements Job {
     private int threadCounter = 0;
     private Long sleep;
     private boolean enableHashtag;
+    private boolean readRobot;
 
     @SuppressWarnings("unchecked")
     @Override
@@ -102,6 +103,7 @@ public class WebFetcherJob implements Job {
         this.crawlerUserAgent = dataMap.getString(WebFetcher.PROPERTY_CRAWLER_USER_AGENT);
         this.sleep = dataMap.getLong(WebFetcher.PROPERTY_SLEEP);
         this.enableHashtag = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_HASHTAG);
+        this.readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
 
         String waitForCssSelector = dataMap.getString(WebFetcher.PROPERTY_WAIT_FOR_CSS_SELECTOR);
         Long maxWaitForCssSelector = dataMap.getLong(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR);
@@ -116,7 +118,6 @@ public class WebFetcherJob implements Job {
 
         boolean enableDelete = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_DELETE);
         boolean enableCrawl = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_CRAWL);
-        boolean readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
         boolean reindex = dataMap.getBoolean(WebFetcher.PROPERTY_REINDEX);
         boolean enableRegex = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_REGEX);
         boolean enableJsLinks = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_JSLINKS);
@@ -393,7 +394,7 @@ public class WebFetcherJob implements Job {
 
                 Result result = urlController.getURL(index, url, baseUrl, chromeDriver);
                 Thread.sleep(sleep);
-                ContentAnalyzer contentAnalyer = ContentAnalyzer.getInstance(result);
+                ContentAnalyzer contentAnalyer = ContentAnalyzer.getInstance(result, readRobot);
 
                 if (result == null || result.getContent() == null) {
 

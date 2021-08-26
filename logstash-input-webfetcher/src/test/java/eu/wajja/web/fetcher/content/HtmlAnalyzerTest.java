@@ -25,7 +25,7 @@ public class HtmlAnalyzerTest {
         Result result = new Result();
         result.setContentType("text/html");
         result.setContent(content);
-        ContentAnalyzer analyzer = ContentAnalyzer.getInstance(result);
+        ContentAnalyzer analyzer = ContentAnalyzer.getInstance(result, true);
         assertNotNull(analyzer);
         assertFalse(analyzer.isExcluded());
     }
@@ -41,7 +41,7 @@ public class HtmlAnalyzerTest {
         Result result = new Result();
         result.setContentType("text/html");
         result.setContent(content);
-        ContentAnalyzer analyzer = ContentAnalyzer.getInstance(result);
+        ContentAnalyzer analyzer = ContentAnalyzer.getInstance(result, true);
         assertNotNull(analyzer);
         assertFalse(analyzer.isExcluded());
     }
@@ -57,9 +57,13 @@ public class HtmlAnalyzerTest {
         Result result = new Result();
         result.setContentType("text/html");
         result.setContent(content);
-        ContentAnalyzer analyzer = ContentAnalyzer.getInstance(result);
+        ContentAnalyzer analyzer = ContentAnalyzer.getInstance(result, true);
         assertNotNull(analyzer);
         assertTrue(analyzer.isExcluded());
+        
+        analyzer = ContentAnalyzer.getInstance(result, false);
+        assertNotNull(analyzer);
+        assertFalse(analyzer.isExcluded());
     }
 
 }

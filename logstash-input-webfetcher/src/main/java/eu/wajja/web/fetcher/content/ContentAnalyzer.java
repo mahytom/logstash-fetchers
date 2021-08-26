@@ -28,10 +28,10 @@ public interface ContentAnalyzer {
      */
     String getExclusionReason();
 
-    public static ContentAnalyzer getInstance(Result result) {
+    public static ContentAnalyzer getInstance(Result result, boolean readRobot) {
 
         if (nonNull(result) && TEXT_HTML.getMimeType().equals(result.getContentType())) {
-            return new HtmlAnalyzer(result);
+            return new HtmlAnalyzer(result, readRobot);
         }
 
         return null;
