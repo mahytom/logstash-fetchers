@@ -24,6 +24,9 @@ public class URLController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(URLController.class);
 
+    private static final String HTTP = "http://";
+    private static final String HTTPS = "https://";
+    
     private Proxy proxy;
     private Long timeout;
     private String userAgent;
@@ -140,12 +143,18 @@ public class URLController {
                 String newUrl = httpURLConnection.getHeaderField("Location");
                 closeConnection(httpURLConnection);
 
-                if (redirectCount < 10) {
+				if (redirectCount < 10) {
 
-                    LOGGER.debug("Redirect needed to :  {}", newUrl);
-                    result.getRedirectUrls().add(currentUrl);
-                    return getURL(index, newUrl, initialUrl, chromeDriver, result.getRedirectUrls(), redirectCount + 1);
-                }
+					String simpleUrlString = newUrl.replace(HTTP, "").replace(HTTPS, "");
+					String simpleRootUrlString = result.getRootUrl().replace(HTTP, "").replace(HTTPS, "");
+
+					if (simpleUrlString.startsWith(simpleRootUrlString)) {
+						
+						LOGGER.debug("Redirect needed to :  {}", newUrl);
+						result.getRedirectUrls().add(currentUrl);
+						return getURL(index, newUrl, initialUrl, chromeDriver, result.getRedirectUrls(), redirectCount + 1);
+					}
+				}
 
             } else {
                 LOGGER.warn("Failed To Read status {}, url {}, message {}", code, url, message);

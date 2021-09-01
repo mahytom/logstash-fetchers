@@ -266,8 +266,6 @@ public class WebFetcherJob implements Job {
 
         LOGGER.info("Starting queued items for thread : {}, url : {}", jobId, initialUrl);
 
-        String chromeDriver = chromeThreads.stream().findFirst().orElse(null);
-
         try {
 
             // TODO : The index doesn't have the time to flush. so nothing is
