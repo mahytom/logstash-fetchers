@@ -425,6 +425,11 @@ public class WebFetcherJob implements Job {
                     LOGGER.info("Already sent url {}", result.getUrl());
                     elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.included, "Document already sent to filter");
 
+                } else if (elasticSearchService.existsMd5InIndex(url, result.getMd5(), index)) {
+
+                    LOGGER.info("MD5 Already sent data {}", result.getUrl());
+                    elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.excluded, "Document has content already indexed");
+                    
                 } else {
 
                     LOGGER.info("Sending url {}", result.getUrl());

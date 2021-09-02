@@ -12,6 +12,7 @@ import java.util.Set;
 
 import javax.net.ssl.SSLException;
 
+import org.apache.commons.codec.digest.DigestUtils;
 import org.apache.commons.io.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,19 +121,34 @@ public class URLController {
 
                     LOGGER.debug("Found pdf, downloading {}", currentUrl);
                     result.setHeaders(httpURLConnection.getHeaderFields());
-                    result.setContent(downloadContent(currentUrl));
-
+                    
+                    byte[] content = downloadContent(currentUrl);
+                    String md5 = DigestUtils.md5Hex(content);
+                    
+                    result.setContent(content);
+                    result.setMd5(md5);
+                    
                 } else {
 
                     closeConnection(httpURLConnection);
                     result.setHeaders(httpURLConnection.getHeaderFields());
 
                     if (chromeDriver == null) {
-                        result.setContent(downloadContent(currentUrl));
+                        
+                        byte[] content = downloadContent(currentUrl);
+                        String md5 = DigestUtils.md5Hex(content);
+                        
+                        result.setContent(content);
+                        result.setMd5(md5);
+                        
                     } else {
                        
                         WebDriverResult webDriverResult = webDriverController.getURL(result.getUrl(), chromeDriver, waitForCssSelector, maxWaitForCssSelector, enableJsLinks);
+                        String md5 = DigestUtils.md5Hex(webDriverResult.getBytes());
+                        
                         result.setContent(webDriverResult.getBytes());
+                        result.setMd5(md5);
+                        
                         result.setChildUrls(webDriverResult.getUrls());
                     }
 

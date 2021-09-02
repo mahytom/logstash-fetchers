@@ -11,6 +11,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import org.apache.commons.codec.digest.DigestUtils;
 import org.elasticsearch.action.admin.indices.flush.FlushRequest;
 import org.elasticsearch.action.bulk.BackoffPolicy;
 import org.elasticsearch.action.bulk.BulkProcessor;
@@ -61,6 +62,7 @@ public class ElasticSearchService {
     private static final String CODE = "code";
     private static final String CONTENT_TYPE = "contentType";
     private static final String CONTENT = "content";
+    private static final String CONTENT_MD5 = "contentMd5";
     private static final String CONTENT_SIZE = "contentSize";
     private static final String MESSAGE = "message";
     private static final String REASON = "reason";
@@ -235,12 +237,17 @@ public class ElasticSearchService {
 
             if (result.getContent() != null) {
 
-                if (result.getContentType().contains("html")) {
-                    contentBuilder.field(CONTENT, new String(result.getContent()));
-                } else {
-                    String content = Base64.getEncoder().encodeToString(result.getContent());
-                    contentBuilder.field(CONTENT, content);
-                }
+				String content;
+
+				if (result.getContentType().contains("html")) {
+					content = new String(result.getContent());
+				} else {
+					content = Base64.getEncoder().encodeToString(result.getContent());
+				}
+
+				String md5 = DigestUtils.md5Hex(result.getContent());
+				contentBuilder.field(CONTENT_MD5, md5);
+				contentBuilder.field(CONTENT, content);
             }
 
             Map<String, List<String>> map = new HashMap<>();
@@ -408,6 +415,7 @@ public class ElasticSearchService {
                 result.setChildUrls(objectMapper.readValue(childUrls, Set.class));
             }
             
+            result.setMd5((String) source.get(CONTENT_MD5));
             result.setCode((Integer) source.get(CODE));
             result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
             result.setLength((Integer) source.get(CONTENT_SIZE));
@@ -535,6 +543,25 @@ public class ElasticSearchService {
         return searchResponse.getHits().getTotalHits() > 0;
     }
 
+    public boolean existsMd5InIndex(String url, String md5, String index) throws IOException {
+
+    	String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
+    	
+        SearchRequest searchRequest = new SearchRequest(index);
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.size(0);
+
+        BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery()
+        	.must(QueryBuilders.termQuery(CONTENT_MD5, md5))
+        	.mustNot(QueryBuilders.termQuery("_id", id));
+        
+        sourceBuilder.query(boolQueryBuilder);
+        searchRequest.source(sourceBuilder);
+
+        SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
+        return searchResponse.getHits().getTotalHits() > 0;
+    }
+    
     public boolean hasMoreItemsInQueued(String index) {
 
         try {
