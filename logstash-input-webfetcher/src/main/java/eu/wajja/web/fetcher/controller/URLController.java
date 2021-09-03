@@ -154,7 +154,12 @@ public class URLController {
 
                 }
 
-            } else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == HttpURLConnection.HTTP_MOVED_PERM || code == 307 || code == HttpURLConnection.HTTP_SEE_OTHER) {
+            } else if (code == HttpURLConnection.HTTP_MOVED_PERM) {
+            	
+            	LOGGER.warn("Pages moved permanently, status {}, url {}, message {}", code, url, message);
+            	return result;
+            	
+            } else if (code == HttpURLConnection.HTTP_MOVED_TEMP || code == 307 || code == HttpURLConnection.HTTP_SEE_OTHER) {
 
                 String newUrl = httpURLConnection.getHeaderField("Location");
                 closeConnection(httpURLConnection);
