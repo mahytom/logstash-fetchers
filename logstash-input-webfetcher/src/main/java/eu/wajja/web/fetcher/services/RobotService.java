@@ -147,7 +147,7 @@ public class RobotService {
 
                 if (m.find()) {
                     LOGGER.info("URL {} is dissallowed", urlString);
-                    elasticSearchService.addNewUrl(urlString, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "excluded by robot");
+                    elasticSearchService.addNewUrl(urlString, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "excluded by robot", null);
                     return false;
                 }
             }

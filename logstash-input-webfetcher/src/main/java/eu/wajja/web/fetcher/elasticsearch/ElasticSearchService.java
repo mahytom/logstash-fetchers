@@ -54,12 +54,12 @@ public class ElasticSearchService {
     private static final Logger LOGGER = LoggerFactory.getLogger(ElasticSearchService.class);
     private static final Scroll scroll = new Scroll(TimeValue.timeValueHours(1l));;
 
-    private static final String DOCUMENT_TYPE = "_doc";
     private static final String INDEX_SHARDS = "index.number_of_shards";
     private static final String INDEX_NUMBER_OF_REPLICAS = "index.number_of_replicas";
     private ObjectMapper objectMapper = new ObjectMapper();
 
     private static final String CODE = "code";
+    private static final String REFERRER = "referrer";
     private static final String CONTENT_TYPE = "contentType";
     private static final String CONTENT = "content";
     private static final String CONTENT_MD5 = "contentMd5";
@@ -118,15 +118,13 @@ public class ElasticSearchService {
             }
         };
 
-        BulkProcessor.Builder builder = BulkProcessor.builder(restHighLevelClient::bulkAsync, listener);
-
-        builder.setBulkActions(100);
-        builder.setConcurrentRequests(3);
-        builder.setBulkSize(new ByteSizeValue(30, ByteSizeUnit.MB));
-        builder.setFlushInterval(TimeValue.timeValueSeconds(30));
-        builder.setBackoffPolicy(BackoffPolicy.exponentialBackoff(TimeValue.timeValueMillis(100), 3));
-
-        bulkProcessor = builder.build();
+        bulkProcessor = BulkProcessor.builder((request, bulkListener) -> restHighLevelClient.bulkAsync(request, RequestOptions.DEFAULT, bulkListener), listener)
+                .setBulkActions(100)
+                .setConcurrentRequests(3)
+                .setBulkSize(new ByteSizeValue(30, ByteSizeUnit.MB))
+                .setFlushInterval(TimeValue.timeValueSeconds(30))
+                .setBackoffPolicy(BackoffPolicy.exponentialBackoff(TimeValue.timeValueMillis(100), 3))
+                .build();
 
     }
 
@@ -202,7 +200,7 @@ public class ElasticSearchService {
 
         String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
 
-        UpdateRequest updateRequest = new UpdateRequest(index, DOCUMENT_TYPE, id);
+        UpdateRequest updateRequest = new UpdateRequest(index, id);
 
         try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
 
@@ -229,7 +227,6 @@ public class ElasticSearchService {
 
         IndexRequest indexRequest = new IndexRequest(index);
         indexRequest.id(id);
-        indexRequest.type(DOCUMENT_TYPE);
 
         try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
 
@@ -237,17 +234,17 @@ public class ElasticSearchService {
 
             if (result.getContent() != null) {
 
-				String content;
+                String content;
 
-				if (result.getContentType().contains("html")) {
-					content = new String(result.getContent());
-				} else {
-					content = Base64.getEncoder().encodeToString(result.getContent());
-				}
+                if (result.getContentType().contains("html")) {
+                    content = new String(result.getContent());
+                } else {
+                    content = Base64.getEncoder().encodeToString(result.getContent());
+                }
 
-				String md5 = DigestUtils.md5Hex(result.getContent());
-				contentBuilder.field(CONTENT_MD5, md5);
-				contentBuilder.field(CONTENT, content);
+                String md5 = DigestUtils.md5Hex(result.getContent());
+                contentBuilder.field(CONTENT_MD5, md5);
+                contentBuilder.field(CONTENT, content);
             }
 
             Map<String, List<String>> map = new HashMap<>();
@@ -265,6 +262,7 @@ public class ElasticSearchService {
             contentBuilder.field(SUB_STATUS, subStatus.name());
             contentBuilder.field(JOB_ID, jobId);
             contentBuilder.field(REASON, message);
+            contentBuilder.field(REFERRER, result.getReferrer());
             contentBuilder.field(ETAG, result.geteTag());
             contentBuilder.field(CHILD_URLS, objectMapper.writeValueAsString(result.getChildUrls()));
             contentBuilder.endObject();
@@ -277,17 +275,16 @@ public class ElasticSearchService {
         }
 
         if (result.getRedirectUrls() != null) {
-            result.getRedirectUrls().forEach(currentUrl -> addNewUrl(currentUrl, result.getRootUrl(), jobId, index, status, subStatus, message));
+            result.getRedirectUrls().forEach(currentUrl -> addNewUrl(currentUrl, result.getRootUrl(), jobId, index, status, subStatus, message, result.getReferrer()));
         }
     }
 
-    public void addNewUrl(String url, String rootUrl, String jobId, String index, Status status, SubStatus subStatus, String message) {
+    public void addNewUrl(String url, String rootUrl, String jobId, String index, Status status, SubStatus subStatus, String message, String referrer) {
 
         String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
 
         IndexRequest indexRequest = new IndexRequest(index);
         indexRequest.id(id);
-        indexRequest.type(DOCUMENT_TYPE);
 
         try (XContentBuilder contentBuilder = XContentFactory.jsonBuilder()) {
 
@@ -300,7 +297,8 @@ public class ElasticSearchService {
             contentBuilder.field(REASON, message);
             contentBuilder.field(ROOT_URL, rootUrl);
             contentBuilder.field(URL, url);
-
+            contentBuilder.field(REFERRER, referrer);
+            
             contentBuilder.endObject();
 
             indexRequest.source(contentBuilder);
@@ -414,23 +412,23 @@ public class ElasticSearchService {
             if (childUrls != null) {
                 result.setChildUrls(objectMapper.readValue(childUrls, Set.class));
             }
-            
+
             result.setMd5((String) source.get(CONTENT_MD5));
             result.setCode((Integer) source.get(CODE));
             result.setHeaders(objectMapper.readValue((String) source.get(HEADERS), Map.class));
             result.setLength((Integer) source.get(CONTENT_SIZE));
             result.setMessage((String) source.get(MESSAGE));
             result.seteTag((String) source.get(ETAG));
-           
+
         }
 
         return result;
     }
 
-    public void addNewChildUrl(String url, String rootUrl, String jobId, String index) {
+    public void addNewChildUrl(String url, String rootUrl, String jobId, String index, String referrer) {
 
         String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
-
+        
         GetRequest getRequest = new GetRequest(index);
         getRequest.id(id);
 
@@ -452,7 +450,7 @@ public class ElasticSearchService {
                 searchRequest.source(sourceBuilder);
 
                 SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-                boolean documentWithJobIdExist = searchResponse.getHits().getTotalHits() > 0;
+                boolean documentWithJobIdExist = searchResponse.getHits().getTotalHits().value > 0;
 
                 if (documentWithJobIdExist) {
                     return;
@@ -463,7 +461,7 @@ public class ElasticSearchService {
 
             }
 
-            addNewUrl(url, rootUrl, jobId, index, Status.queue, SubStatus.included, "Found on parent page");
+            addNewUrl(url, rootUrl, jobId, index, Status.queue, SubStatus.included, "Found on parent page", referrer);
 
         } catch (IOException e1) {
             LOGGER.error("Failed to check if document exists", e1);
@@ -484,7 +482,7 @@ public class ElasticSearchService {
 
         SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
 
-        if (searchResponse.getHits().getTotalHits() > 0) {
+        if (searchResponse.getHits().getTotalHits().value > 0) {
 
             SearchHit searchHit = searchResponse.getHits().getAt(0);
             Map<String, Object> source = searchHit.getSourceAsMap();
@@ -521,7 +519,8 @@ public class ElasticSearchService {
             result.setRootUrl((String) source.get(ROOT_URL));
             result.setUrl((String) source.get(URL));
             result.seteTag((String) source.get(ETAG));
-
+            result.setReferrer((String) source.get(REFERRER));
+            
             return result;
         }
 
@@ -540,28 +539,28 @@ public class ElasticSearchService {
         searchRequest.source(sourceBuilder);
 
         SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-        return searchResponse.getHits().getTotalHits() > 0;
+        return searchResponse.getHits().getTotalHits().value > 0;
     }
 
     public boolean existsMd5InIndex(String url, String md5, String index) throws IOException {
 
-    	String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
-    	
+        String id = Base64.getEncoder().encodeToString(url.replace("https://", "").replace("http://", "").getBytes());
+
         SearchRequest searchRequest = new SearchRequest(index);
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
         sourceBuilder.size(0);
 
         BoolQueryBuilder boolQueryBuilder = QueryBuilders.boolQuery()
-        	.must(QueryBuilders.termQuery(CONTENT_MD5, md5))
-        	.mustNot(QueryBuilders.termQuery("_id", id));
-        
+                .must(QueryBuilders.termQuery(CONTENT_MD5, md5))
+                .mustNot(QueryBuilders.termQuery("_id", id));
+
         sourceBuilder.query(boolQueryBuilder);
         searchRequest.source(sourceBuilder);
 
         SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-        return searchResponse.getHits().getTotalHits() > 0;
+        return searchResponse.getHits().getTotalHits().value > 0;
     }
-    
+
     public boolean hasMoreItemsInQueued(String index) {
 
         try {
@@ -574,7 +573,7 @@ public class ElasticSearchService {
             searchRequest.source(sourceBuilder);
 
             SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-            return searchResponse.getHits().getTotalHits() > 0;
+            return searchResponse.getHits().getTotalHits().value > 0;
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -598,7 +597,7 @@ public class ElasticSearchService {
             searchRequest.source(sourceBuilder);
 
             SearchResponse searchResponse = restHighLevelClient.search(searchRequest, RequestOptions.DEFAULT);
-            return searchResponse.getHits().getTotalHits();
+            return searchResponse.getHits().getTotalHits().value;
 
         } catch (IOException e) {
             e.printStackTrace();

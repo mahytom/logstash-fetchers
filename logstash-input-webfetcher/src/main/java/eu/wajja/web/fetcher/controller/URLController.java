@@ -59,6 +59,7 @@ public class URLController {
 
         Result result = new Result();
         result.setUrl(currentUrl);
+        result.setReferrer(currentUrl);
         result.setRootUrl(initialUrl);
         result.setCode(404);
         result.setRedirectUrls(redirectUrls);

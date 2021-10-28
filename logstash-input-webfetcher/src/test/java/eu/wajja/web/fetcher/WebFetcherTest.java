@@ -36,11 +36,13 @@ public class WebFetcherTest {
 		Map<String, Object> configValues = new HashMap<>();
 		
 		String excludeData = (String) properties.get(WebFetcher.PROPERTY_EXCLUDE_DATA);
-		String[] arrayExcludeData = objectMapper.readValue(excludeData, String[].class);
+//		String[] arrayExcludeData = objectMapper.readValue(excludeData, String[].class);
+		
+		String excludeLink = (String) properties.get(WebFetcher.PROPERTY_EXCLUDE_LINK);
 		
 		configValues.put(WebFetcher.CONFIG_URLS.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_URLS), String[].class)));
-		configValues.put(WebFetcher.CONFIG_EXCLUDE_DATA.name(), Arrays.asList(arrayExcludeData));
-		configValues.put(WebFetcher.CONFIG_EXCLUDE_LINK.name(), Arrays.asList(objectMapper.readValue((String) properties.get(WebFetcher.PROPERTY_EXCLUDE_LINK), String[].class)));
+		configValues.put(WebFetcher.CONFIG_EXCLUDE_DATA.name(), Arrays.asList(excludeData.split("\\,")));
+		configValues.put(WebFetcher.CONFIG_EXCLUDE_LINK.name(), Arrays.asList(excludeLink.split("\\,")));
 		configValues.put(WebFetcher.CONFIG_CRON.name(), properties.get(WebFetcher.PROPERTY_CRON));
 		configValues.put(WebFetcher.CONFIG_TIMEOUT.name(), new Long((String) properties.get(WebFetcher.PROPERTY_TIMEOUT)));
 		configValues.put(WebFetcher.CONFIG_MAX_PAGES.name(), new Long((String) properties.get(WebFetcher.PROPERTY_MAX_PAGES)));
@@ -52,12 +54,12 @@ public class WebFetcherTest {
 		
 		configValues.put(WebFetcher.CONFIG_ENABLE_REGEX.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_ENABLE_REGEX)));
 		configValues.put(WebFetcher.CONFIG_ENABLE_DELETE.name(), new Boolean((String) properties.get(WebFetcher.PROPERTY_ENABLE_DELETE)));
-		configValues.put(WebFetcher.CONFIG_ROOT_URL.name(),  properties.get(WebFetcher.PROPERTY_ROOT_URL));
+//		configValues.put(WebFetcher.CONFIG_ROOT_URL.name(),  properties.get(WebFetcher.PROPERTY_ROOT_URL));
 		configValues.put(WebFetcher.CONFIG_ENABLE_JSLINKS.name(), true);
 		
 		Configuration config = new ConfigurationImpl(configValues);
 		WebFetcher webFetcher = new WebFetcher("test-id", config, null);
-		webFetcher.stopped = true;
+		webFetcher.stopped = false;
 
 		TestConsumer testConsumer = new TestConsumer();
 		webFetcher.start(testConsumer);

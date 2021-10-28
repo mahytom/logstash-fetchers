@@ -379,12 +379,12 @@ public class WebFetcherJob implements Job {
             } else if (!robotService.isAllowed(url, rootUrl, index, jobId, crawlerUserAgent)) {
 
                 // Check if robot allows url
-                elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "robot dissallowed");
+                elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "robot dissallowed", null);
 
             } else if (excludedLinkRegex.stream().anyMatch(ex -> url.matches(ex))) {
 
                 // Exclude if link is not allowed
-                elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex");
+                elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.processed, SubStatus.excluded, "regex excludedLinkRegex", null);
 
             } else {
 
@@ -397,12 +397,12 @@ public class WebFetcherJob implements Job {
                 if (result == null || result.getContent() == null) {
 
                     // content is empty
-                    elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "content is empty");
+                    elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "content is empty", result.getUrl());
 
                 } else if (result.getCode() != 200) {
 
                     // Exclude if data is not allowed
-                    elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, result.getCode().toString());
+                    elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, result.getCode().toString(), result.getUrl());
 
                 } else if (excludedDataRegex.stream().anyMatch(ex -> result.getUrl().matches(ex))) {
 
@@ -429,7 +429,7 @@ public class WebFetcherJob implements Job {
 
                     LOGGER.info("MD5 Already sent data {}", result.getUrl());
                     elasticSearchService.addNewUrl(result, jobId, index, Status.processed, SubStatus.excluded, "Document has content already indexed");
-                    
+
                 } else {
 
                     LOGGER.info("Sending url {}", result.getUrl());
@@ -497,6 +497,7 @@ public class WebFetcherJob implements Job {
                     LOGGER.debug("Checking children {}", includedChildPages);
 
                     includedChildPages = includedChildPages.stream()
+                            .filter(href -> href != null && !href.trim().isEmpty())
                             .filter(href -> !href.equals("/") && !href.startsWith("//"))
                             .map(urlStream -> getUrlString(urlStream, result.getUrl(), baseUrl))
                             .filter(href -> href.startsWith(HTTP) || href.startsWith(HTTPS))
@@ -507,7 +508,8 @@ public class WebFetcherJob implements Job {
 
                     LOGGER.debug("Checked children {}", includedChildPages);
 
-                    includedChildPages.parallelStream().forEach(href -> elasticSearchService.addNewChildUrl(href, baseUrl, jobId, index));
+                    includedChildPages.stream()
+                            .forEach(href -> elasticSearchService.addNewChildUrl(href, baseUrl, jobId, index, result.getUrl()));
                 }
 
                 elasticSearchService.flushIndex(index);
@@ -567,6 +569,7 @@ public class WebFetcherJob implements Job {
 
         try {
             return new URI(urlString).normalize().toString();
+
         } catch (URISyntaxException e) {
             LOGGER.warn("Failed to normalize url {}", urlString);
         }

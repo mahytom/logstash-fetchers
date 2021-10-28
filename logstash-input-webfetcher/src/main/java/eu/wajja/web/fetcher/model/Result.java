@@ -23,16 +23,29 @@ public class Result {
     private boolean isCached = false;
     private Set<String> childUrls = new HashSet<>();
     private Map<String, List<String>> headers = new HashMap<>();
+    private String referrer;
+
+    public String getReferrer() {
+
+        return referrer;
+    }
+
+    public void setReferrer(String referrer) {
+
+        this.referrer = referrer;
+    }
 
     public String getMd5() {
-		return md5;
-	}
 
-	public void setMd5(String md5) {
-		this.md5 = md5;
-	}
+        return md5;
+    }
 
-	public Set<String> getChildUrls() {
+    public void setMd5(String md5) {
+
+        this.md5 = md5;
+    }
+
+    public Set<String> getChildUrls() {
 
         return childUrls;
     }
