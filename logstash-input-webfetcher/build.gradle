@@ -73,6 +73,27 @@ dependencies {
     testCompile group: 'net.bytebuddy', name: 'byte-buddy-agent', version: '1.10.14'
     testCompile 'org.jruby:jruby-complete:9.1.13.0'
     testImplementation 'org.mockito:mockito-inline:2.23.4'
+    
+    implementation('org.apache.httpcomponents:httpclient') {
+        version {
+          strictly '4.5.10'
+        }
+      }
+      implementation('org.apache.httpcomponents:httpmime') {
+        version {
+          strictly '4.5.10'
+        }
+      }
+      implementation('org.apache.httpcomponents:httpcore') {
+        version {
+          strictly '4.4.12'
+        }
+      }
+     implementation('org.apache.httpcomponents:httpcore-osgi') {
+        version {
+          strictly '4.4.12'
+        }
+      }
 }
 
 clean {
