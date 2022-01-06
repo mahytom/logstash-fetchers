@@ -50,12 +50,23 @@ public class ElasticRestClient {
 
 		hostnames.stream().forEach(h -> {
 
-			String host = h.split(":")[0];
-			Integer port = new Integer(h.split(":")[1]);
+            String scheme = null;
+            String host = h;
+            int port = -1;
+
+            if (h.startsWith("http")) {
+                scheme = host.split(":")[0];
+                host = host.split(":")[1].substring(2);
+            }
+
+            if (host.contains(":")) {
+                port = Integer.parseInt(host.split(":")[1]);
+                host = host.split(":")[0];
+            }
 
 			try {
 
-				HttpHost httpHost = new HttpHost(InetAddress.getByName(host), port);
+				HttpHost httpHost = new HttpHost(InetAddress.getByName(host), port, scheme);
 				httpHosts.add(httpHost);
 
 				if (username != null && password != null) {
