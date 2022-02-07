@@ -84,11 +84,22 @@ public class WebFetcherJob implements Job {
     private boolean enableHashtag;
     private boolean readRobot;
 
+    private JobDataMap dataMap;
+
+    public WebFetcherJob() {
+    }
+
+    public WebFetcherJob(JobDataMap dataMap) {
+        this.dataMap = dataMap;
+    }
+
     @SuppressWarnings("unchecked")
     @Override
     public void execute(JobExecutionContext context) throws JobExecutionException {
 
-        JobDataMap dataMap = context.getJobDetail().getJobDataMap();
+        if (dataMap == null) {
+            dataMap = context.getJobDetail().getJobDataMap();
+        }
         Consumer<Map<String, Object>> consumer = (Consumer<Map<String, Object>>) dataMap.get(WebFetcher.PROPERTY_CONSUMER);
         List<String> initialUrls = (List<String>) dataMap.get(WebFetcher.PROPERTY_URLS);
         List<String> chromeThreads = (List<String>) dataMap.get(WebFetcher.PROPERTY_CHROME_DRIVERS);
