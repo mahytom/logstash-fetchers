@@ -10,6 +10,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import org.apache.commons.lang3.StringUtils;
 import org.quartz.CronScheduleBuilder;
 import org.quartz.JobBuilder;
 import org.quartz.JobDataMap;
@@ -66,7 +67,7 @@ public class WebFetcher implements Input {
     protected static final String PROPERTY_ENABLE_REGEX = "enableRegex";
     protected static final String PROPERTY_ENABLE_HASHTAG = "enableHashtag";
     protected static final String PROPERTY_ENABLE_JSLINKS = "enabledJsLinks";
-    
+
     protected static final String PROPERTY_ELASTIC_HOSTNAMES = "elasticsearchHostnames";
     protected static final String PROPERTY_ELASTIC_USERNAME = "elasticsearchUsername";
     protected static final String PROPERTY_ELASTIC_PASSWORD = "elasticsearchPassword";
@@ -95,7 +96,7 @@ public class WebFetcher implements Input {
     public static final PluginConfigSpec<String> CONFIG_ROOT_URL = PluginConfigSpec.stringSetting(PROPERTY_ROOT_URL, null, false, false);
     public static final PluginConfigSpec<Boolean> CONFIG_ENABLE_REGEX = PluginConfigSpec.booleanSetting(PROPERTY_ENABLE_REGEX, false);
     public static final PluginConfigSpec<Boolean> CONFIG_ENABLE_JSLINKS = PluginConfigSpec.booleanSetting(PROPERTY_ENABLE_JSLINKS, false);
-    
+
     public static final PluginConfigSpec<List<Object>> CONFIG_ELASTIC_HOSTNAMES = PluginConfigSpec.arraySetting(PROPERTY_ELASTIC_HOSTNAMES, new ArrayList<>(), false, false);
     public static final PluginConfigSpec<String> CONFIG_ELASTIC_USERNAME = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_USERNAME, null, false, false);
     public static final PluginConfigSpec<String> CONFIG_ELASTIC_PASSWORD = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_PASSWORD, null, false, false);
@@ -105,7 +106,7 @@ public class WebFetcher implements Input {
     public static final PluginConfigSpec<String> CONFIG_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.stringSetting(PROPERTY_WAIT_FOR_CSS_SELECTOR);
     public static final PluginConfigSpec<Long> CONFIG_MAX_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.numSetting(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, 30);
     public static final PluginConfigSpec<Long> CONFIG_SLEEP = PluginConfigSpec.numSetting(PROPERTY_SLEEP, 1);
-    
+
     private final CountDownLatch done = new CountDownLatch(1);
     protected volatile boolean stopped;
 
@@ -141,7 +142,7 @@ public class WebFetcher implements Input {
         jobDataMap.put(PROPERTY_ROOT_URL, config.get(CONFIG_ROOT_URL));
         jobDataMap.put(PROPERTY_ENABLE_HASHTAG, config.get(CONFIG_ENABLE_HASHTAG));
         jobDataMap.put(PROPERTY_ENABLE_JSLINKS, config.get(CONFIG_ENABLE_JSLINKS));
-        
+
         jobDataMap.put(PROPERTY_PROXY_HOST, config.get(CONFIG_PROXY_HOST));
         jobDataMap.put(PROPERTY_PROXY_PORT, config.get(CONFIG_PROXY_PORT));
         jobDataMap.put(PROPERTY_PROXY_USER, config.get(CONFIG_PROXY_USER));
@@ -158,7 +159,7 @@ public class WebFetcher implements Input {
         jobDataMap.put(PROPERTY_ENABLE_DELETE, config.get(CONFIG_ENABLE_DELETE));
         jobDataMap.put(PROPERTY_ENABLE_REGEX, config.get(CONFIG_ENABLE_REGEX));
         jobDataMap.put(PROPERTY_SLEEP, config.get(CONFIG_SLEEP));
-        
+
         this.threadId = id;
         this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
         this.cron = config.get(CONFIG_CRON);
@@ -184,18 +185,23 @@ public class WebFetcher implements Input {
                     .setJobData(newJobDataMap)
                     .build();
 
-            Trigger trigger = TriggerBuilder.newTrigger()
-                    .withIdentity(uuid, GROUP_NAME)
-                    .startNow()
-                    .withSchedule(CronScheduleBuilder.cronSchedule(this.cron))
-                    .build();
+            // If there is a cron lets run the scheduler
+            if (StringUtils.isNotBlank(this.cron)) {
+                Trigger trigger = TriggerBuilder.newTrigger()
+                        .withIdentity(uuid, GROUP_NAME)
+                        .withSchedule(CronScheduleBuilder.cronSchedule(this.cron))
+                        .startNow()
+                        .build();
+                SchedulerBuilder.getScheduler().scheduleJob(job, trigger);
 
-            SchedulerBuilder.getScheduler().scheduleJob(job, trigger);
-
-            while (!stopped) {
-                Thread.sleep(1000);
+                while (!stopped) {
+                    Thread.sleep(1000);
+                }
+            // otherwise run the job now
+            } else {
+                new WebFetcherJob(newJobDataMap).execute(null);
+                done.countDown();
             }
-
         } catch (Exception e) {
             LOGGER.error("Failed", e);
         }
@@ -248,7 +254,7 @@ public class WebFetcher implements Input {
                 CONFIG_CHROME_DRIVERS,
                 CONFIG_WAIT_FOR_CSS_SELECTOR,
                 CONFIG_ROOT_URL,
-                CONFIG_REINDEX, 
+                CONFIG_REINDEX,
                 CONFIG_SLEEP,
                 CONFIG_ELASTIC_HOSTNAMES,
                 CONFIG_ELASTIC_USERNAME,
