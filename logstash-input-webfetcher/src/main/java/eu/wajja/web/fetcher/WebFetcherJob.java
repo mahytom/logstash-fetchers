@@ -28,7 +28,6 @@ import javax.xml.parsers.DocumentBuilderFactory;
 
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.http.entity.ContentType;
 import org.jsoup.Jsoup;
 import org.jsoup.select.Elements;
 import org.quartz.DisallowConcurrentExecution;
@@ -86,10 +85,10 @@ public class WebFetcherJob implements Job {
 
     private JobDataMap dataMap;
 
-    public WebFetcherJob() {
-    }
+    public WebFetcherJob() {}
 
     public WebFetcherJob(JobDataMap dataMap) {
+
         this.dataMap = dataMap;
     }
 
@@ -464,10 +463,10 @@ public class WebFetcherJob implements Job {
 
                 if (checkChildren && result != null && result.getContent() != null && baseUrl != null) {
 
-                    Map<String, List<String>> headers = result.getHeaders();
+                    // Map<String, List<String>> headers = result.getHeaders();
                     Set<String> includedChildPages = new HashSet<>();
 
-                    if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("html")) {
+                    if (result.getContentType() != null && result.getContentType().contains("html")) {
 
                         if (result.getChildUrls().isEmpty()) {
 
@@ -482,7 +481,7 @@ public class WebFetcherJob implements Job {
 
                         }
 
-                    } else if (headers.containsKey("Content-Type") && headers.get("Content-Type").get(0).contains("xml")) {
+                    } else if (result.getContentType() != null && result.getContentType().contains("xml")) {
 
                         try (InputStream inputStream = new ByteArrayInputStream(result.getContent())) {
 
