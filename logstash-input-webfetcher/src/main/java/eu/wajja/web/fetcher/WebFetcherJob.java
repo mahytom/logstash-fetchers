@@ -463,7 +463,6 @@ public class WebFetcherJob implements Job {
 
                 if (checkChildren && result != null && result.getContent() != null && baseUrl != null) {
 
-                    // Map<String, List<String>> headers = result.getHeaders();
                     Set<String> includedChildPages = new HashSet<>();
 
                     if (result.getContentType() != null && result.getContentType().contains("html")) {
