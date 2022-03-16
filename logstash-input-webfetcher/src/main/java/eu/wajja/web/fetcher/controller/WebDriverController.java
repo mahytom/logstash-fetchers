@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -28,10 +29,10 @@ public class WebDriverController {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(WebDriverController.class);
 
-    public WebDriverResult getURL(String url, String chromeDriver, String waitForCssSelector, Integer maxWaitForCssSelector, boolean enableJsLinks) throws MalformedURLException, WebDriverException {
+    public WebDriverResult getURL(String url, String chromeDriver, String userAgent, String waitForCssSelector, Integer maxWaitForCssSelector, boolean enableJsLinks) throws MalformedURLException, WebDriverException {
 
         WebDriverResult webDriverResult = new WebDriverResult();
-        WebDriver webDriver = getWebDriver(chromeDriver);
+        WebDriver webDriver = getWebDriver(chromeDriver, userAgent);
 
         Set<String> childUrls = new HashSet<>();
         Set<String> unparsedJavascriptChildUrls = new HashSet<>();
@@ -97,7 +98,7 @@ public class WebDriverController {
         }
 
         if (enableJsLinks) {
-            Set<String> newChildUrls = getJsLinks(url, chromeDriver, unparsedJavascriptChildUrls);
+            Set<String> newChildUrls = getJsLinks(url, chromeDriver, userAgent, unparsedJavascriptChildUrls);
             childUrls.addAll(newChildUrls);
         }
 
@@ -106,13 +107,13 @@ public class WebDriverController {
         return webDriverResult;
     }
 
-    private Set<String> getJsLinks(String url, String chromeDriver, Set<String> unparsedJavascriptChildUrls) throws WebDriverException, MalformedURLException {
+    private Set<String> getJsLinks(String url, String chromeDriver, String userAgent, Set<String> unparsedJavascriptChildUrls) throws WebDriverException, MalformedURLException {
 
         Set<String> childUrls = new HashSet<>();
 
         for (String childUrlText : unparsedJavascriptChildUrls) {
 
-            WebDriver webDriverForChild = getWebDriver(chromeDriver);
+            WebDriver webDriverForChild = getWebDriver(chromeDriver, userAgent);
 
             try {
 
@@ -150,7 +151,7 @@ public class WebDriverController {
         return childUrls;
     }
 
-    private WebDriver getWebDriver(String chromeDriver) throws WebDriverException, MalformedURLException {
+    private WebDriver getWebDriver(String chromeDriver, String userAgent) throws WebDriverException, MalformedURLException {
 
         WebDriver webDriver = null;
 
@@ -163,6 +164,9 @@ public class WebDriverController {
             ChromeOptions chromeOptions = new ChromeOptions();
             chromeOptions.addArguments("--headless");
             chromeOptions.addArguments("--no-sandbox");
+            Optional.ofNullable(userAgent)
+                    .filter(StringUtils::isNotBlank)
+                    .ifPresent(ua -> chromeOptions.addArguments("user-agent=" + ua));
 
             webDriver = new RemoteWebDriver(new URL(chromeDriver), chromeOptions);
 
@@ -181,6 +185,9 @@ public class WebDriverController {
             chromeOptions.addArguments("--headless");
             chromeOptions.addArguments("--no-sandbox");
             chromeOptions.addArguments("--disable-dev-shm-usage");
+            Optional.ofNullable(userAgent)
+                    .filter(StringUtils::isNotBlank)
+                    .ifPresent(ua -> chromeOptions.addArguments("user-agent=" + ua));
 
             webDriver = new ChromeDriver(chromeOptions);
 

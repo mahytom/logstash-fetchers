@@ -144,7 +144,7 @@ public class URLController {
                         
                     } else {
                        
-                        WebDriverResult webDriverResult = webDriverController.getURL(result.getUrl(), chromeDriver, waitForCssSelector, maxWaitForCssSelector, enableJsLinks);
+                        WebDriverResult webDriverResult = webDriverController.getURL(result.getUrl(), chromeDriver, userAgent, waitForCssSelector, maxWaitForCssSelector, enableJsLinks);
                         String md5 = DigestUtils.md5Hex(webDriverResult.getBytes());
                         
                         result.setContent(webDriverResult.getBytes());
