@@ -72,6 +72,7 @@ public class WebFetcherJob implements Job {
     private List<String> includedLinkRegex;
     private String crawlerUserAgent;
     private String rootUrl;
+    private boolean ignoreHttpError;
 
     private ElasticSearchService elasticSearchService;
     private URLController urlController;
@@ -114,6 +115,7 @@ public class WebFetcherJob implements Job {
         this.sleep = dataMap.getLong(WebFetcher.PROPERTY_SLEEP);
         this.enableHashtag = dataMap.getBoolean(WebFetcher.PROPERTY_ENABLE_HASHTAG);
         this.readRobot = dataMap.getBoolean(WebFetcher.PROPERTY_READ_ROBOT);
+        this.ignoreHttpError = dataMap.getBoolean(WebFetcher.PROPERTY_IGNORE_HTTP_ERROR);
 
         String waitForCssSelector = dataMap.getString(WebFetcher.PROPERTY_WAIT_FOR_CSS_SELECTOR);
         Long maxWaitForCssSelector = dataMap.getLong(WebFetcher.PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR);
@@ -400,7 +402,7 @@ public class WebFetcherJob implements Job {
 
                 // we have to fetch the data to continue here
 
-                Result result = urlController.getURL(index, url, baseUrl, chromeDriver);
+                Result result = urlController.getURL(index, url, baseUrl, chromeDriver, ignoreHttpError);
                 Thread.sleep(sleep);
                 ContentAnalyzer contentAnalyer = ContentAnalyzer.getInstance(result, readRobot);
 
@@ -409,7 +411,7 @@ public class WebFetcherJob implements Job {
                     // content is empty
                     elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, "content is empty", result.getUrl());
 
-                } else if (result.getCode() != 200) {
+                } else if (result.getCode() != 200 && !ignoreHttpError) {
 
                     // Exclude if data is not allowed
                     elasticSearchService.addNewUrl(url, rootUrl, jobId, index, Status.failed, SubStatus.excluded, result.getCode().toString(), result.getUrl());

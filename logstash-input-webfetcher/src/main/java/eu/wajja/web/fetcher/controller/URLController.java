@@ -1,6 +1,5 @@
 package eu.wajja.web.fetcher.controller;
 
-import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
@@ -50,12 +49,12 @@ public class URLController {
         this.enableJsLinks = enableJsLinks;
     }
 
-    public Result getURL(String index, String currentUrl, String initialUrl, String chromeDriver) {
+    public Result getURL(String index, String currentUrl, String initialUrl, String chromeDriver, boolean ignoreHttpError) {
 
-        return getURL(index, currentUrl, initialUrl, chromeDriver, new HashSet<>(), 0);
+        return getURL(index, currentUrl, initialUrl, chromeDriver, new HashSet<>(), 0, ignoreHttpError);
     }
 
-    private Result getURL(String index, String currentUrl, String initialUrl, String chromeDriver, Set<String> redirectUrls, Integer redirectCount) {
+    private Result getURL(String index, String currentUrl, String initialUrl, String chromeDriver, Set<String> redirectUrls, Integer redirectCount, boolean ignoreHttpError) {
 
         Result result = new Result();
         result.setUrl(currentUrl);
@@ -80,7 +79,7 @@ public class URLController {
             httpURLConnection.setConnectTimeout(timeout.intValue());
             httpURLConnection.setReadTimeout(timeout.intValue());
             httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
-            httpURLConnection.addRequestProperty("User-Agent", userAgent);
+            httpURLConnection.addRequestProperty("User-Agent", chromeDriver);
             httpURLConnection.addRequestProperty("Referer", referer);
             httpURLConnection.setRequestMethod("HEAD");
 
@@ -93,7 +92,7 @@ public class URLController {
             result.setMessage(message);
             result.setContentType(parseContentType(httpURLConnection.getContentType()));
 
-            if (code == HttpURLConnection.HTTP_OK) {
+            if (code == HttpURLConnection.HTTP_OK || ignoreHttpError) {
 
                 if (elasticSearchService.existsInIndex(currentUrl, index)) {
 
@@ -174,7 +173,7 @@ public class URLController {
 						
 						LOGGER.debug("Redirect needed to :  {}", newUrl);
 						result.getRedirectUrls().add(currentUrl);
-						return getURL(index, newUrl, initialUrl, chromeDriver, result.getRedirectUrls(), redirectCount + 1);
+						return getURL(index, newUrl, initialUrl, chromeDriver, result.getRedirectUrls(), redirectCount + 1, ignoreHttpError);
 					}
 				}
 
@@ -185,7 +184,7 @@ public class URLController {
 
                     // Bad Gateway, sleep and try again
                     Thread.sleep(5000);
-                    return getURL(index, currentUrl, initialUrl, chromeDriver, redirectUrls, redirectCount + 1);
+                    return getURL(index, currentUrl, initialUrl, chromeDriver, redirectUrls, redirectCount + 1, ignoreHttpError);
                 }
             }
 
