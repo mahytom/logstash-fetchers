@@ -79,7 +79,7 @@ public class URLController {
             httpURLConnection.setConnectTimeout(timeout.intValue());
             httpURLConnection.setReadTimeout(timeout.intValue());
             httpURLConnection.addRequestProperty("Accept-Language", "en-US,en;q=0.8");
-            httpURLConnection.addRequestProperty("User-Agent", chromeDriver);
+            httpURLConnection.addRequestProperty("User-Agent", userAgent);
             httpURLConnection.addRequestProperty("Referer", referer);
             httpURLConnection.setRequestMethod("HEAD");
 
