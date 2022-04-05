@@ -67,7 +67,8 @@ public class WebFetcher implements Input {
     protected static final String PROPERTY_ENABLE_REGEX = "enableRegex";
     protected static final String PROPERTY_ENABLE_HASHTAG = "enableHashtag";
     protected static final String PROPERTY_ENABLE_JSLINKS = "enabledJsLinks";
-
+    protected static final String PROPERTY_IGNORE_HTTP_ERROR = "ignoreHttpError";
+    
     protected static final String PROPERTY_ELASTIC_HOSTNAMES = "elasticsearchHostnames";
     protected static final String PROPERTY_ELASTIC_USERNAME = "elasticsearchUsername";
     protected static final String PROPERTY_ELASTIC_PASSWORD = "elasticsearchPassword";
@@ -102,6 +103,7 @@ public class WebFetcher implements Input {
     public static final PluginConfigSpec<String> CONFIG_ELASTIC_PASSWORD = PluginConfigSpec.stringSetting(PROPERTY_ELASTIC_PASSWORD, null, false, false);
     public static final PluginConfigSpec<Boolean> CONFIG_ENABLE_CRAWL = PluginConfigSpec.booleanSetting(PROPERTY_ENABLE_CRAWL, true, false, false);
     public static final PluginConfigSpec<Boolean> CONFIG_ENABLE_DELETE = PluginConfigSpec.booleanSetting(PROPERTY_ENABLE_DELETE, false, false, false);
+    public static final PluginConfigSpec<Boolean> CONFIG_IGNORE_HTTP_ERROR = PluginConfigSpec.booleanSetting(PROPERTY_IGNORE_HTTP_ERROR, false, false, false);
 
     public static final PluginConfigSpec<String> CONFIG_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.stringSetting(PROPERTY_WAIT_FOR_CSS_SELECTOR);
     public static final PluginConfigSpec<Long> CONFIG_MAX_WAIT_FOR_CSS_SELECTOR = PluginConfigSpec.numSetting(PROPERTY_MAX_WAIT_FOR_CSS_SELECTOR, 30);
@@ -159,6 +161,7 @@ public class WebFetcher implements Input {
         jobDataMap.put(PROPERTY_ENABLE_DELETE, config.get(CONFIG_ENABLE_DELETE));
         jobDataMap.put(PROPERTY_ENABLE_REGEX, config.get(CONFIG_ENABLE_REGEX));
         jobDataMap.put(PROPERTY_SLEEP, config.get(CONFIG_SLEEP));
+        jobDataMap.put(PROPERTY_IGNORE_HTTP_ERROR, config.get(CONFIG_IGNORE_HTTP_ERROR));
 
         this.threadId = id;
         this.urls = config.get(CONFIG_URLS).stream().map(url -> (String) url).collect(Collectors.toList());
@@ -264,7 +267,8 @@ public class WebFetcher implements Input {
                 CONFIG_ENABLE_DELETE,
                 CONFIG_ENABLE_REGEX,
                 CONFIG_ENABLE_HASHTAG,
-                CONFIG_MAX_WAIT_FOR_CSS_SELECTOR);
+                CONFIG_MAX_WAIT_FOR_CSS_SELECTOR,
+                CONFIG_IGNORE_HTTP_ERROR);
     }
 
     @Override

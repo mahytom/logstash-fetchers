@@ -65,7 +65,7 @@ public class RobotService {
 
     private void readRobot(String index, String initialUrl, String robotUrl, List<String> chromeThreads, String jobId) {
 
-        Result result = urlController.getURL(index, robotUrl, initialUrl, chromeThreads.stream().findFirst().orElse(null));
+        Result result = urlController.getURL(index, robotUrl, initialUrl, chromeThreads.stream().findFirst().orElse(null), false);
 
         if (result != null && result.getContent() != null) {
 
